@@ -21,6 +21,7 @@ OUT_ASPECT = OUT_W / OUT_H
 DEFAULT_FULL_W = 3840
 DEFAULT_FULL_H = 2160
 BIRD_CLASS_ID = 16
+MAX_MOTION_STEP_SECONDS = 0.1
 Crop = tuple[int, int, int, int]
 
 
@@ -115,6 +116,7 @@ def advance_crop(
     """Advance a crop target with time-based zoom and pan velocity limits."""
     if elapsed <= 0:
         return current
+    elapsed = min(elapsed, MAX_MOTION_STEP_SECONDS)
 
     current_x, current_y, current_w, current_h = current
     target_x, target_y, target_w, target_h = target
@@ -203,13 +205,14 @@ class GuidanceState:
         self._last_birds_at = None
         self._updated_at = None
 
-    def publish(self, target, bird_count, observed_at):
+    def publish(self, target, bird_count, observed_at, published_at=None):
+        result_time = time.monotonic() if published_at is None else published_at
         with self._lock:
             self._bird_count = bird_count
             self._updated_at = observed_at
             if bird_count:
                 self._target = target
-                self._last_birds_at = observed_at
+                self._last_birds_at = result_time
 
     def target_for(self, frame_w, frame_h, now, hold_seconds):
         with self._lock:
@@ -302,7 +305,7 @@ class GuidanceWorker(threading.Thread):
                 )
                 frame_h, frame_w = snapshot.frame.shape[:2]
                 target = compute_bird_crop(birds, frame_w, frame_h, tracker["padding"])
-                self.guidance.publish(target, len(birds), snapshot.captured_at)
+                self.guidance.publish(target, len(birds), snapshot.captured_at, published_at=time.monotonic())
                 next_sample = time.monotonic() + sample_period
         except Exception as exc:
             self.error = exc
@@ -406,6 +409,7 @@ class BirdCam:
                 if current_crop is None or current_shape != shape:
                     current_crop = overview_crop(frame_w, frame_h)
                     current_shape = shape
+                    last_render = now
 
                 target_crop = self.guidance.target_for(frame_w, frame_h, now, tracker.get("hold_seconds", 1.0))
                 elapsed = max(0.0, now - last_render)
