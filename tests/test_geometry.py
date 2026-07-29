@@ -34,6 +34,13 @@ def test_overview_crop_is_centered_and_vertical():
     assert y == 0
 
 
+def test_advance_crop_does_not_move_without_elapsed_time():
+    current = overview_crop(3840, 2160)
+    target = (1700, 700, 450, 800)
+
+    assert advance_crop(current, target, 0.0, 3840, 2160, 0.25, 0.25) == current
+
+
 def test_advance_crop_caps_zoom_velocity():
     current = overview_crop(3840, 2160)
     target = (1700, 700, 450, 800)
