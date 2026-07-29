@@ -84,3 +84,27 @@ def test_photo_source_paces_frames_at_configured_rate(tmp_path):
     assert len(sleeps) == 2
     assert abs(sleeps[0] - 1 / 60) < 1e-9
     assert abs(sleeps[1] - 1 / 60) < 1e-9
+
+
+def test_photo_source_does_not_burst_after_clock_stall(tmp_path):
+    write_photo(tmp_path / "bird.jpg", 100)
+    now = [10.0]
+    sleeps = []
+
+    def clock():
+        return now[0]
+
+    def sleep(delay):
+        sleeps.append(delay)
+        now[0] += delay
+
+    source = PhotoSequenceCapture(
+        str(tmp_path / "*.jpg"), fps=60, realtime=True, clock=clock, sleep=sleep
+    )
+    source.read()
+    now[0] += 1.0
+    source.read()
+    source.read()
+
+    assert len(sleeps) == 1
+    assert abs(sleeps[0] - 1 / 60) < 1e-9
