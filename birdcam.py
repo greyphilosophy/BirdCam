@@ -120,7 +120,7 @@ def advance_crop(
 
     current_x, current_y, current_w, current_h = current
     target_x, target_y, target_w, target_h = target
-    max_zoom_delta = max(1.0, current_w * max_zoom_fraction_per_second * elapsed)
+    max_zoom_delta = max(0.0, current_w * max_zoom_fraction_per_second * elapsed)
     width = move_toward(float(current_w), float(target_w), max_zoom_delta)
     width = clamp(width, 1.0, float(overview_crop(frame_w, frame_h)[2]))
     height = width / OUT_ASPECT
