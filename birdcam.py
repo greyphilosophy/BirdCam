@@ -26,13 +26,7 @@ Crop = tuple[int, int, int, int]
 
 def detect_birds(model, frame, conf_thresh=0.45, imgsz=1280, device=0):
     """Detect birds and return boxes in source-frame coordinates."""
-    results = model.predict(
-        frame,
-        verbose=False,
-        conf=conf_thresh,
-        imgsz=imgsz,
-        device=device,
-    )
+    results = model.predict(frame, verbose=False, conf=conf_thresh, imgsz=imgsz, device=device)
     birds = []
     for result in results:
         if result.boxes is None:
@@ -68,14 +62,7 @@ def overview_crop(frame_w, frame_h):
     height = min(frame_h, int(round(frame_w / OUT_ASPECT)))
     width = min(frame_w, int(round(height * OUT_ASPECT)))
     height = int(round(width / OUT_ASPECT))
-    return clamp_rect(
-        (frame_w - width) // 2,
-        (frame_h - height) // 2,
-        width,
-        height,
-        frame_w,
-        frame_h,
-    )
+    return clamp_rect((frame_w - width) // 2, (frame_h - height) // 2, width, height, frame_w, frame_h)
 
 
 def compute_bird_crop(
@@ -126,10 +113,11 @@ def advance_crop(
     max_pan_fraction_per_second: float,
 ) -> Crop:
     """Advance a crop target with time-based zoom and pan velocity limits."""
-    elapsed = max(0.0, elapsed)
+    if elapsed <= 0:
+        return current
+
     current_x, current_y, current_w, current_h = current
     target_x, target_y, target_w, target_h = target
-
     max_zoom_delta = max(1.0, current_w * max_zoom_fraction_per_second * elapsed)
     width = move_toward(float(current_w), float(target_w), max_zoom_delta)
     width = clamp(width, 1.0, float(overview_crop(frame_w, frame_h)[2]))
@@ -185,7 +173,8 @@ class LatestFrame:
     def publish(self, frame, captured_at=None):
         with self._condition:
             sequence = 1 if self._snapshot is None else self._snapshot.sequence + 1
-            self._snapshot = FrameSnapshot(sequence, captured_at or time.monotonic(), frame)
+            timestamp = time.monotonic() if captured_at is None else captured_at
+            self._snapshot = FrameSnapshot(sequence, timestamp, frame)
             self._condition.notify_all()
             return sequence
 
@@ -257,7 +246,6 @@ class CaptureWorker(threading.Thread):
                     failures = 0
                     self.latest_frame.publish(frame)
                     continue
-
                 failures += 1
                 if failures < 10:
                     time.sleep(0.01)
@@ -267,7 +255,7 @@ class CaptureWorker(threading.Thread):
                 cap = None
                 failures = 0
                 self.stop_event.wait(1.0)
-        except Exception as exc:  # surfaced to the renderer loop
+        except Exception as exc:
             self.error = exc
             logger.exception("Capture worker stopped")
             self.stop_event.set()
@@ -297,7 +285,6 @@ class GuidanceWorker(threading.Thread):
             sample_period = 1.0 / maximum_fps
             sequence = 0
             next_sample = 0.0
-
             while not self.stop_event.is_set():
                 snapshot = self.latest_frame.wait_for_newer(sequence, timeout=0.25)
                 if snapshot is None:
@@ -306,7 +293,6 @@ class GuidanceWorker(threading.Thread):
                 now = time.monotonic()
                 if now < next_sample:
                     continue
-
                 birds = detect_birds(
                     model,
                     snapshot.frame,
@@ -318,7 +304,7 @@ class GuidanceWorker(threading.Thread):
                 target = compute_bird_crop(birds, frame_w, frame_h, tracker["padding"])
                 self.guidance.publish(target, len(birds), snapshot.captured_at)
                 next_sample = time.monotonic() + sample_period
-        except Exception as exc:  # surfaced to the renderer loop
+        except Exception as exc:
             self.error = exc
             logger.exception("Guidance worker stopped")
             self.stop_event.set()
@@ -421,12 +407,7 @@ class BirdCam:
                     current_crop = overview_crop(frame_w, frame_h)
                     current_shape = shape
 
-                target_crop = self.guidance.target_for(
-                    frame_w,
-                    frame_h,
-                    now,
-                    tracker.get("hold_seconds", 1.0),
-                )
+                target_crop = self.guidance.target_for(frame_w, frame_h, now, tracker.get("hold_seconds", 1.0))
                 elapsed = max(0.0, now - last_render)
                 last_render = now
                 current_crop = advance_crop(
