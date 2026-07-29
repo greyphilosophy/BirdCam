@@ -1,11 +1,22 @@
-# BirdCam - Adaptive Zoom Bird Feeder Livestream Tracker
+# BirdCam — Adaptive Zoom Bird Feeder Livestream Tracker
 
-TikTok livestream with adaptive zoom for bird feeders.
+Variable-zoom 9:16 crop for bird feeder livestreaming on TikTok.
+
+**Target birds:** Steller's Jays (COCO class 16: "bird")
+
+## How It Works
+
+- **No birds:** Shows full 4K frame scaled to 9:16 with black bars
+- **Birds appear:** Smoothly zooms in on them
+- **Multiple birds:** Expands crop to include all birds
+- **Birds leave:** Holds position briefly, then zooms back out
+
+Black bars serve as placeholders for future background imagery.
 
 ## Setup (Guardian452 — Windows 11 + RTX 4090)
 
 ```
-git clone https://github.com/YEE/birdcam-tracker.git
+git clone https://github.com/greyphilosophy/birdcam-tracker.git
 cd birdcam-tracker
 python -m venv venv
 venv\Scripts\activate
@@ -16,10 +27,16 @@ copy config.example.yaml config.yaml
 python birdcam.py
 ```
 
-## How It Works
+## Hardware
 
-- **No birds:** Full 4K frame view in 9:16 with black bars
-- **Birds appear:** Smoothly zooms in on them
-- **Multiple birds:** Adjusts zoom to fit all in frame
+- Camera: ELP High Speed 4K 60FPS USB Camera (IMX678 sensor)
+- GPU: NVIDIA RTX 4090 (YOLOv8 runs via CUDA)
+- Output: 1080×1920 (9:16) for TikTok
 
-Black bars = placeholder for future background image.
+## Config
+
+See `config.yaml` for:
+- Camera device index
+- Bird detection confidence threshold
+- Zoom hold duration
+- Debug window toggle
