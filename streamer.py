@@ -49,10 +49,26 @@ class RTMPStreamer:
             "-an",
             "-c:v",
             self.encoder,
-            "-preset",
-            self.preset,
-            "-tune",
-            "ll",
+        ]
+
+        if self.encoder == "libx264":
+            command.extend([
+                "-threads",
+                "4",
+                "-preset",
+                self.preset or "veryfast",
+                "-tune",
+                "zerolatency",
+            ])
+        else:
+            command.extend([
+                "-preset",
+                self.preset,
+                "-tune",
+                "ll",
+            ])
+
+        command.extend([
             "-pix_fmt",
             "yuv420p",
             "-b:v",
@@ -66,15 +82,7 @@ class RTMPStreamer:
             "-f",
             "flv",
             self.rtmp_url,
-        ]
-        if self.encoder == "libx264":
-            tune_index = command.index("ll")
-            command[tune_index] = "zerolatency"
-            command[command.index("-preset") + 1] = self.preset or "veryfast"
-            command[0:0] = []
-            command.extend([])
-            command.insert(command.index("-f", command.index("-an")), "-threads")
-            command.insert(command.index("-f", command.index("-an")), "4")
+        ])
         return command
 
     def start(self):
