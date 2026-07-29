@@ -1,25 +1,40 @@
 # BirdCam Configuration Example
-# Copy this to config.yaml and edit for your setup
+# Copy this to config.yaml and edit for your setup.
 
 camera:
-  device: 0        # Camera device index (check with: ls /dev/video*)
-  fps: 30          # Target FPS
+  device: 0
+  width: 3840
+  height: 2160
+  fps: 60
+  fourcc: MJPG          # Required for 4K60 on the ELP IMX678 USB camera
 
 detector:
-  model_path: models/yolov8n.pt   # YOLOv8 model file
-  conf_thresh: 0.45             # Confidence threshold for bird detection
+  model_path: models/yolov8n.pt
+  conf_thresh: 0.45
+  imgsz: 1280           # YOLO inference size; lower this if detection limits FPS
+  device: 0             # CUDA device index
+  interval_frames: 1    # Run detection every frame; increase to reduce GPU load
 
 tracker:
-  padding: 200              # Padding around birds in pixels
-  hold_frames: 30          # Frames to hold zoom before zooming out (1 sec at 30fps)
+  padding: 200
+  hold_seconds: 1.0     # Time-based so behavior is independent of frame rate
+  smoothing: 0.2
 
 debug:
-  window: true              # Show debug window (hide for headless)
-  show_boxes: true         # Overlay bounding boxes
-  log_fps: true            # Log FPS every 60 frames
+  window: true
+  log_fps: true
 
-# Streaming (future: RTMP to TikTok)
+# The ELP camera has no microphone. Enable this only for a separate Windows
+# USB microphone. Find its exact DirectShow name with:
+# ffmpeg -list_devices true -f dshow -i dummy
+audio:
+  enabled: false
+  device: "Microphone (USB Audio Device)"
+  bitrate: "160k"
+
 stream:
   rtmp_url: "rtmp://live.cdn.tiktok.com/live/STREAM_KEY"
-  fps: 30
-  bitrate: "4000k"
+  fps: 60
+  bitrate: "8000k"
+  encoder: h264_nvenc   # Use libx264 if FFmpeg lacks NVIDIA NVENC support
+  preset: p4            # For libx264, use a preset such as veryfast
