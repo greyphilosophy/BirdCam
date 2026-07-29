@@ -24,6 +24,14 @@ debug:
   window: true
   log_fps: true
 
+# The ELP camera has no microphone. Enable this only for a separate Windows
+# USB microphone. Find its exact DirectShow name with:
+# ffmpeg -list_devices true -f dshow -i dummy
+audio:
+  enabled: false
+  device: "Microphone (USB Audio Device)"
+  bitrate: "160k"
+
 stream:
   rtmp_url: "rtmp://live.cdn.tiktok.com/live/STREAM_KEY"
   fps: 60
