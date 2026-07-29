@@ -13,7 +13,6 @@ def main():
     parser.add_argument("photos", help='Glob such as "test_photos/*.jpg"')
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--seconds-per-photo", type=float, default=2.0)
-    parser.add_argument("--no-loop", action="store_true")
     args = parser.parse_args()
 
     with open(args.config, encoding="utf-8") as config_file:
@@ -25,7 +24,7 @@ def main():
         args.photos,
         fps=fps,
         seconds_per_photo=args.seconds_per_photo,
-        loop=not args.no_loop,
+        loop=True,
         realtime=True,
     )
     app.run()
