@@ -206,13 +206,12 @@ class GuidanceState:
         self._updated_at = None
 
     def publish(self, target, bird_count, observed_at, published_at=None):
-        result_time = time.monotonic() if published_at is None else published_at
         with self._lock:
             self._bird_count = bird_count
             self._updated_at = observed_at
             if bird_count:
                 self._target = target
-                self._last_birds_at = result_time
+                self._last_birds_at = observed_at
 
     def target_for(self, frame_w, frame_h, now, hold_seconds):
         with self._lock:
