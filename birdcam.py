@@ -176,12 +176,15 @@ class BirdCam:
             return
         from streamer import RTMPStreamer
 
+        audio = self.config.get("audio", {})
         self.streamer = RTMPStreamer(
             rtmp_url=stream["rtmp_url"],
             fps=stream.get("fps", 60),
             bitrate=stream.get("bitrate", "8000k"),
             encoder=stream.get("encoder", "h264_nvenc"),
             preset=stream.get("preset", "p4"),
+            audio_device=audio.get("device") if audio.get("enabled", False) else None,
+            audio_bitrate=audio.get("bitrate", "160k"),
         )
         self.streamer.start()
 
