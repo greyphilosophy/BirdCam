@@ -18,7 +18,7 @@ from photo_source import PhotoSequenceCapture
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("photos", help='Glob such as "test_photos/*.jpg"')
+    parser.add_argument("photos", help='Glob such as "test_photos/*.JPG"')
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--seconds-per-photo", type=float, default=2.0)
     parser.add_argument(
@@ -35,6 +35,10 @@ def main():
         config.setdefault("stream", {})["rtmp_url"] = ""
 
     fps = float(config.get("stream", {}).get("fps", 60))
+    camera = config.get("camera", {})
+    width = int(camera.get("width", 3840))
+    height = int(camera.get("height", 2160))
+
     app = BirdCam(config)
     app.open_camera = lambda: PhotoSequenceCapture(
         args.photos,
@@ -42,6 +46,8 @@ def main():
         seconds_per_photo=args.seconds_per_photo,
         loop=True,
         realtime=True,
+        width=width,
+        height=height,
     )
     app.run()
 
