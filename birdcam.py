@@ -7,6 +7,8 @@ import time
 import sys
 import logging
 
+from ultralytics import YOLO
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("birdcam")
 
