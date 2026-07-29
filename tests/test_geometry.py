@@ -44,6 +44,18 @@ def test_advance_crop_caps_zoom_velocity():
     assert advanced[2] > target[2]
 
 
+def test_tight_crop_does_not_force_a_one_pixel_zoom_step():
+    current = (100, 100, 40, 71)
+    target = (105, 109, 20, 36)
+
+    advanced = advance_crop(current, target, 0.1, 3840, 2160, 0.1, 0.0)
+
+    # The configured cap allows only 0.4 source pixels in this interval. Since
+    # crop rectangles are integer-valued, the controller must wait rather than
+    # forcing a one-pixel step that would exceed the maximum velocity.
+    assert advanced[2] == current[2]
+
+
 def test_long_stall_does_not_create_catch_up_zoom_jump():
     current = overview_crop(3840, 2160)
     target = (1700, 700, 450, 800)
