@@ -13,7 +13,7 @@ OUT_H = 1920
 
 
 class RTMPStreamer:
-    """Stream raw BGR frames to an RTMP URL through FFmpeg."""
+    """Stream raw BGR frames and optional microphone audio through FFmpeg."""
 
     def __init__(
         self,
@@ -22,12 +22,16 @@ class RTMPStreamer:
         bitrate: str = "8000k",
         encoder: str = "h264_nvenc",
         preset: str = "p4",
+        audio_device: str | None = None,
+        audio_bitrate: str = "160k",
     ):
         self.rtmp_url = rtmp_url
         self.fps = fps
         self.bitrate = bitrate
         self.encoder = encoder
         self.preset = preset
+        self.audio_device = audio_device
+        self.audio_bitrate = audio_bitrate
         self.process = None
 
     def _command(self):
@@ -46,11 +50,23 @@ class RTMPStreamer:
             str(self.fps),
             "-i",
             "pipe:0",
-            "-an",
-            "-c:v",
-            self.encoder,
         ]
 
+        if self.audio_device:
+            command.extend([
+                "-f",
+                "dshow",
+                "-i",
+                f"audio={self.audio_device}",
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+            ])
+        else:
+            command.append("-an")
+
+        command.extend(["-c:v", self.encoder])
         if self.encoder == "libx264":
             command.extend([
                 "-threads",
@@ -79,25 +95,44 @@ class RTMPStreamer:
             self.bitrate,
             "-g",
             str(self.fps * 2),
-            "-f",
-            "flv",
-            self.rtmp_url,
         ])
+
+        if self.audio_device:
+            command.extend([
+                "-c:a",
+                "aac",
+                "-b:a",
+                self.audio_bitrate,
+                "-ar",
+                "48000",
+            ])
+
+        command.extend(["-f", "flv", self.rtmp_url])
         return command
+
+    def _safe_command_text(self, command):
+        """Render the FFmpeg command without exposing the RTMP stream key."""
+        safe_command = list(command)
+        if safe_command and safe_command[-1] == self.rtmp_url:
+            safe_command[-1] = "<redacted-rtmp-url>"
+        return subprocess.list2cmdline(safe_command)
 
     def start(self):
         """Start FFmpeg and leave stderr attached so failures stay visible."""
         if self.process and self.process.poll() is None:
             return
         command = self._command()
-        logger.info("Starting FFmpeg: %s", " ".join(command))
-        self.process = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=None,
-            bufsize=0,
-        )
+        logger.info("Starting FFmpeg: %s", self._safe_command_text(command))
+        try:
+            self.process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=None,
+                bufsize=0,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("FFmpeg was not found on PATH") from exc
         if self.process.stdin is None:
             raise RuntimeError("FFmpeg stdin was not created")
 
