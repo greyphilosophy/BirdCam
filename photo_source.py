@@ -30,6 +30,7 @@ class PhotoSequenceCapture:
         if not self.paths:
             raise ValueError(f"No photos matched {pattern!r}")
         self.fps = max(0.1, float(fps))
+        self.frame_period = 1.0 / self.fps
         self.frames_per_photo = max(1, round(self.fps * max(0.0, seconds_per_photo)))
         self.loop = loop
         self.realtime = realtime
@@ -51,17 +52,25 @@ class PhotoSequenceCapture:
     def isOpened(self):
         return self.opened
 
+    def _pace(self):
+        now = self.clock()
+        if self.next_frame_at is None:
+            self.next_frame_at = now
+        delay = self.next_frame_at - now
+        if delay > 0:
+            self.sleep(delay)
+            now = self.clock()
+        # A live camera does not replay missed deadlines. Reset after a stall so
+        # the capture worker cannot publish a burst of synthetic catch-up frames.
+        if now - self.next_frame_at > self.frame_period:
+            self.next_frame_at = now
+        self.next_frame_at += self.frame_period
+
     def read(self):
         if not self.opened:
             return False, None
         if self.realtime:
-            now = self.clock()
-            if self.next_frame_at is None:
-                self.next_frame_at = now
-            delay = self.next_frame_at - now
-            if delay > 0:
-                self.sleep(delay)
-            self.next_frame_at += 1.0 / self.fps
+            self._pace()
 
         output = self.frame.copy()
         self.frame_number += 1
