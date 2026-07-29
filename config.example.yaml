@@ -1,0 +1,25 @@
+# BirdCam Configuration Example
+# Copy this to config.yaml and edit for your setup
+
+camera:
+  device: 0        # Camera device index (check with: ls /dev/video*)
+  fps: 30          # Target FPS
+
+detector:
+  model_path: models/yolov8n.pt   # YOLOv8 model file
+  conf_thresh: 0.45             # Confidence threshold for bird detection
+
+tracker:
+  padding: 200              # Padding around birds in pixels
+  hold_frames: 30          # Frames to hold zoom before zooming out (1 sec at 30fps)
+
+debug:
+  window: true              # Show debug window (hide for headless)
+  show_boxes: true         # Overlay bounding boxes
+  log_fps: true            # Log FPS every 60 frames
+
+# Streaming (future: RTMP to TikTok)
+stream:
+  rtmp_url: "rtmp://live.cdn.tiktok.com/live/STREAM_KEY"
+  fps: 30
+  bitrate: "4000k"
