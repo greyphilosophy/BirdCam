@@ -106,8 +106,8 @@ class BirdCam:
     def __init__(self, config):
         self.config = config
         self.current_crop = None
-        self.target_crop = None
         self.hold_timer = 0
+        self.streamer = None
 
     def run(self):
         """Main loop: detect → zoom/pan → output frame."""
@@ -135,76 +135,96 @@ class BirdCam:
                     int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
                     int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
 
+        # Optional: start RTMP streamer
+        if self.config.get("stream") and self.config["stream"].get("rtmp_url"):
+            from streamer import RTMPStreamer
+            self.streamer = RTMPStreamer(
+                rtmp_url=self.config["stream"]["rtmp_url"],
+                fps=self.config["stream"].get("fps", 30),
+                bitrate=self.config["stream"].get("bitrate", "4000k")
+            )
+            self.streamer.start()
+
         logger.info("Starting BirdCam...")
         frame_count = 0
         last_fps_time = time.time()
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                continue
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    continue
 
-            # Detect birds
-            birds = detect_birds(model, frame, self.config["detector"]["conf_thresh"])
+                # Detect birds
+                birds = detect_birds(model, frame, self.config["detector"]["conf_thresh"])
 
-            # Compute output
-            if birds:
-                self.hold_timer = 0
-                target_crop = compute_bird_crop(
-                    birds, FULL_W, FULL_H, self.config["tracker"]["padding"]
-                )
-                if target_crop is not None:
-                    if self.current_crop is not None:
-                        # Smooth transition
-                        self.current_crop = (
-                            int(lerp(self.current_crop[0], target_crop[0], 0.2)),
-                            int(lerp(self.current_crop[1], target_crop[1], 0.2)),
-                            int(lerp(self.current_crop[2], target_crop[2], 0.2)),
-                            int(lerp(self.current_crop[3], target_crop[3], 0.2)),
-                        )
-                    else:
-                        self.current_crop = target_crop
+                # Compute output
+                if birds:
+                    self.hold_timer = 0
+                    target_crop = compute_bird_crop(
+                        birds, FULL_W, FULL_H, self.config["tracker"]["padding"]
+                    )
+                    if target_crop is not None:
+                        if self.current_crop is not None:
+                            # Smooth transition
+                            self.current_crop = (
+                                int(lerp(self.current_crop[0], target_crop[0], 0.2)),
+                                int(lerp(self.current_crop[1], target_crop[1], 0.2)),
+                                int(lerp(self.current_crop[2], target_crop[2], 0.2)),
+                                int(lerp(self.current_crop[3], target_crop[3], 0.2)),
+                            )
+                        else:
+                            self.current_crop = target_crop
 
-                    # Crop and scale
-                    try:
-                        output = crop_and_scale(frame, self.current_crop)
-                    except Exception:
-                        output = full_frame_view(frame)
-                else:
-                    output = full_frame_view(frame)
-            else:
-                # No birds: hold briefly, then zoom out
-                self.hold_timer += 1
-                if self.hold_timer > self.config["tracker"]["hold_frames"]:
-                    self.current_crop = None
-                    output = full_frame_view(frame)
-                else:
-                    # Holding: keep last crop if available
-                    if self.current_crop is not None:
+                        # Crop and scale
                         try:
                             output = crop_and_scale(frame, self.current_crop)
                         except Exception:
                             output = full_frame_view(frame)
                     else:
                         output = full_frame_view(frame)
+                else:
+                    # No birds: hold briefly, then zoom out
+                    self.hold_timer += 1
+                    if self.hold_timer > self.config["tracker"]["hold_frames"]:
+                        self.current_crop = None
+                        output = full_frame_view(frame)
+                    else:
+                        # Holding: keep last crop if available
+                        if self.current_crop is not None:
+                            try:
+                                output = crop_and_scale(frame, self.current_crop)
+                            except Exception:
+                                output = full_frame_view(frame)
+                        else:
+                            output = full_frame_view(frame)
 
-            # Debug window
-            if self.config["debug"]["window"]:
-                cv2.imshow("BirdCam", output)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
+                # Stream output
+                if self.streamer:
+                    self.streamer.send_frame(output)
 
-            frame_count += 1
-            if frame_count % 60 == 0:
-                elapsed = time.time() - last_fps_time
-                fps = 60 / max(elapsed, 0.1)
-                state = "BIRDS" if birds else "FULL"
-                logger.info("FPS: %.1f | Birds: %d | Mode: %s", fps, len(birds), state)
-                last_fps_time = time.time()
+                # Debug window
+                if self.config["debug"]["window"]:
+                    cv2.imshow("BirdCam", output)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
 
-        cap.release()
-        cv2.destroyAllWindows()
-        logger.info("BirdCam stopped")
+                frame_count += 1
+                if frame_count % 60 == 0:
+                    elapsed = time.time() - last_fps_time
+                    fps = 60 / max(elapsed, 0.1)
+                    state = "BIRDS" if birds else "FULL"
+                    logger.info("FPS: %.1f | Birds: %d | Mode: %s", fps, len(birds), state)
+                    last_fps_time = time.time()
+
+        except KeyboardInterrupt:
+            logger.info("Keyboard interrupt received")
+        finally:
+            if self.streamer:
+                self.streamer.stop()
+            cap.release()
+            cv2.destroyAllWindows()
+            logger.info("BirdCam stopped")
 
 
 def main():

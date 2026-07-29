@@ -15,28 +15,49 @@ Black bars serve as placeholders for future background imagery.
 
 ## Setup (Guardian452 — Windows 11 + RTX 4090)
 
-```
-git clone https://github.com/greyphilosophy/birdcam-tracker.git
-cd birdcam-tracker
+### 1. Clone and Install
+
+```cmd
+git clone https://github.com/greyphilosophy/BirdCam.git
+cd BirdCam
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+### 2. Download YOLOv8 Model
+
+```cmd
 python scripts/download_model.py
+```
+
+### 3. Configure
+
+```cmd
 copy config.example.yaml config.yaml
-# Edit config.yaml with your TikTok RTMP stream key
+```
+
+Edit `config.yaml` with your settings:
+- `camera.device`: Camera device index (usually 0 or 1)
+- `stream.rtmp_url`: Your TikTok RTMP URL + stream key
+
+### 4. Run
+
+```cmd
 python birdcam.py
 ```
 
 ## Hardware
 
-- Camera: ELP High Speed 4K 60FPS USB Camera (IMX678 sensor)
-- GPU: NVIDIA RTX 4090 (YOLOv8 runs via CUDA)
-- Output: 1080×1920 (9:16) for TikTok
+- **Camera:** ELP High Speed 4K 60FPS USB Camera (IMX678 sensor)
+- **GPU:** NVIDIA RTX 4090 (YOLOv8 runs via CUDA)
+- **Output:** 1080×1920 (9:16) for TikTok
 
 ## Config
 
-See `config.yaml` for:
+See `config.example.yaml` for:
 - Camera device index
 - Bird detection confidence threshold
 - Zoom hold duration
+- Streaming URL and bitrate
 - Debug window toggle
