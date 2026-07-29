@@ -41,9 +41,9 @@ def test_guidance_holds_last_bird_crop_then_returns_to_overview():
     assert guidance.target_for(3840, 2160, now=11.1, hold_seconds=1.0) == overview_crop(3840, 2160)
 
 
-def test_slow_result_is_fresh_when_published_even_if_source_frame_is_old():
+def test_slow_result_expires_from_source_frame_time():
     guidance = GuidanceState()
     bird_crop = (100, 200, 540, 960)
     guidance.publish(bird_crop, bird_count=1, observed_at=5.0, published_at=10.0)
 
-    assert guidance.target_for(3840, 2160, now=10.5, hold_seconds=1.0) == bird_crop
+    assert guidance.target_for(3840, 2160, now=10.5, hold_seconds=1.0) == overview_crop(3840, 2160)
