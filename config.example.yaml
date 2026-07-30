@@ -11,14 +11,15 @@ camera:
 detector:
   model_path: models/yolov8n.pt
   conf_thresh: 0.45
-  imgsz: 1280           # YOLO inference size; lower this if detection limits FPS
+  imgsz: 1280           # Guidance resolution, independent of output frame rate
   device: 0             # CUDA device index
-  interval_frames: 1    # Run detection every frame; increase to reduce GPU load
+  max_fps: 5            # Guidance may run slowly; only the newest frame is sampled
 
 tracker:
   padding: 200
-  hold_seconds: 1.0     # Time-based so behavior is independent of frame rate
-  smoothing: 0.2
+  hold_seconds: 1.0     # Keep the last target briefly after birds disappear
+  max_zoom_fraction_per_second: 0.35  # Limit crop-size change to 35%/second
+  max_pan_fraction_per_second: 0.25   # Limit center movement to 25% of frame/second
 
 debug:
   window: true
