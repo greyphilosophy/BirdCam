@@ -158,6 +158,21 @@ def fourcc_to_text(value):
     return "".join(chr((value >> (8 * index)) & 0xFF) for index in range(4))
 
 
+def camera_backend(name=None):
+    """Resolve a configured OpenCV capture backend."""
+    normalized = (name or "").strip().lower()
+    if normalized in {"", "auto"}:
+        return cv2.CAP_MSMF if sys.platform == "win32" else cv2.CAP_ANY
+    choices = {
+        "msmf": cv2.CAP_MSMF,
+        "dshow": cv2.CAP_DSHOW,
+        "any": cv2.CAP_ANY,
+    }
+    if normalized not in choices:
+        raise ValueError(f"Unsupported camera backend: {name!r}; use auto, msmf, dshow, or any")
+    return choices[normalized]
+
+
 @dataclass(frozen=True)
 class FrameSnapshot:
     sequence: int
@@ -325,7 +340,8 @@ class BirdCam:
     def open_camera(self):
         camera = self.config["camera"]
         device = camera["device"]
-        backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+        backend_name = camera.get("backend", "auto")
+        backend = camera_backend(backend_name)
         cap = cv2.VideoCapture(device, backend)
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*camera.get("fourcc", "MJPG")))
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, camera.get("width", DEFAULT_FULL_W))
@@ -334,18 +350,27 @@ class BirdCam:
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if not cap.isOpened():
             cap.release()
-            raise RuntimeError(f"Unable to open camera device {device}")
+            raise RuntimeError(f"Unable to open camera device {device} with backend {backend_name}")
 
         actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         actual_fps = cap.get(cv2.CAP_PROP_FPS)
         actual_fourcc = fourcc_to_text(cap.get(cv2.CAP_PROP_FOURCC))
-        logger.info("Camera opened: %s @ %dx%d %.2f fps (%s)", device, actual_w, actual_h, actual_fps, actual_fourcc)
+        logger.info(
+            "Camera opened: %s via %s @ %dx%d %.2f fps (%s)",
+            device,
+            backend_name,
+            actual_w,
+            actual_h,
+            actual_fps,
+            actual_fourcc or "unreported",
+        )
         requested = (camera.get("width", DEFAULT_FULL_W), camera.get("height", DEFAULT_FULL_H), camera.get("fps", 60))
         if (actual_w, actual_h) != requested[:2] or actual_fps + 0.5 < requested[2]:
             logger.warning("Camera did not negotiate requested mode %dx%d @ %s fps", *requested)
-        if actual_fourcc.strip("\x00 ") != camera.get("fourcc", "MJPG"):
-            logger.warning("Camera negotiated %s instead of %s", actual_fourcc, camera.get("fourcc", "MJPG"))
+        readable_fourcc = actual_fourcc.strip("\x00 ")
+        if backend != cv2.CAP_MSMF and readable_fourcc != camera.get("fourcc", "MJPG"):
+            logger.warning("Camera negotiated %s instead of %s", readable_fourcc or "unknown", camera.get("fourcc", "MJPG"))
         return cap
 
     def start_streamer(self):
