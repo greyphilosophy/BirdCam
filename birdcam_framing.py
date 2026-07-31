@@ -2,6 +2,10 @@
 
 import birdcam_legacy as legacy
 
+# Preserve the original motion primitive before birdcam.py patches legacy
+# references to route the optimized runtime through this module.
+_LEGACY_ADVANCE_CROP = legacy.advance_crop
+
 
 def ensure_minimum_output_crop(crop, frame_w, frame_h):
     """Expand a crop so source pixels are never upscaled into the output."""
@@ -58,7 +62,7 @@ def compute_bird_crop(birds, frame_w, frame_h, padding=200):
 
     maximum = legacy.overview_crop(frame_w, frame_h)
     if crop_w > maximum[2] or crop_h > maximum[3]:
-        return maximum
+        return legacy.full_frame_crop(frame_w, frame_h)
 
     crop_w = max(legacy.OUT_W, int(round(crop_w)))
     crop_h = max(legacy.OUT_H, int(round(crop_w / legacy.OUT_ASPECT)))
@@ -84,7 +88,7 @@ def advance_crop(
     """Advance while enforcing the no-upscale crop floor on every frame."""
     current = ensure_minimum_output_crop(current, frame_w, frame_h)
     target = ensure_minimum_output_crop(target, frame_w, frame_h)
-    advanced = legacy.advance_crop(
+    advanced = _LEGACY_ADVANCE_CROP(
         current,
         target,
         elapsed,
