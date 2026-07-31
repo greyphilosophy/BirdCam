@@ -63,7 +63,19 @@ def overview_crop(frame_w, frame_h):
     height = min(frame_h, int(round(frame_w / OUT_ASPECT)))
     width = min(frame_w, int(round(height * OUT_ASPECT)))
     height = int(round(width / OUT_ASPECT))
-    return clamp_rect((frame_w - width) // 2, (frame_h - height) // 2, width, height, frame_w, frame_h)
+    return clamp_rect(
+        (frame_w - width) // 2,
+        (frame_h - height) // 2,
+        width,
+        height,
+        frame_w,
+        frame_h,
+    )
+
+
+def full_frame_crop(frame_w, frame_h):
+    """Return the entire source frame for the letterboxed idle view."""
+    return 0, 0, frame_w, frame_h
 
 
 def compute_bird_crop(
@@ -104,6 +116,19 @@ def compute_bird_crop(
     return clamp_rect(x, y, crop_w, crop_h, frame_w, frame_h)
 
 
+def _limited_dimension_step(current, target, maximum_delta):
+    """Move an integer dimension without exceeding its configured limit."""
+    difference = target - current
+    if difference == 0 or maximum_delta <= 0:
+        return current
+    if abs(difference) <= maximum_delta:
+        return target
+    integer_step = int(maximum_delta)
+    if integer_step < 1:
+        return current
+    return current + integer_step if difference > 0 else current - integer_step
+
+
 def advance_crop(
     current: Crop,
     target: Crop,
@@ -113,43 +138,58 @@ def advance_crop(
     max_zoom_fraction_per_second: float,
     max_pan_fraction_per_second: float,
 ) -> Crop:
-    """Advance a crop target with time-based zoom and pan velocity limits."""
+    """Advance an arbitrary crop with time-based size and pan velocity limits."""
     if elapsed <= 0:
         return current
     elapsed = min(elapsed, MAX_MOTION_STEP_SECONDS)
 
     current_x, current_y, current_w, current_h = current
     target_x, target_y, target_w, target_h = target
-    max_zoom_delta = max(0.0, current_w * max_zoom_fraction_per_second * elapsed)
-    width = move_toward(float(current_w), float(target_w), max_zoom_delta)
-    width = clamp(width, 1.0, float(overview_crop(frame_w, frame_h)[2]))
-    height = width / OUT_ASPECT
-    if height > frame_h:
-        height = float(frame_h)
-        width = height * OUT_ASPECT
+
+    zoom_rate = max(0.0, max_zoom_fraction_per_second)
+    max_width_delta = current_w * zoom_rate * elapsed
+    max_height_delta = current_h * zoom_rate * elapsed
+    width_i = _limited_dimension_step(current_w, target_w, max_width_delta)
+    height_i = _limited_dimension_step(current_h, target_h, max_height_delta)
+    width_i = max(1, min(width_i, frame_w))
+    height_i = max(1, min(height_i, frame_h))
 
     current_cx = current_x + current_w / 2
     current_cy = current_y + current_h / 2
     target_cx = target_x + target_w / 2
     target_cy = target_y + target_h / 2
-    max_pan_delta = max(frame_w, frame_h) * max_pan_fraction_per_second * elapsed
+    max_pan_delta = max(frame_w, frame_h) * max(0.0, max_pan_fraction_per_second) * elapsed
     center_x = move_toward(current_cx, target_cx, max_pan_delta)
     center_y = move_toward(current_cy, target_cy, max_pan_delta)
 
-    width_i = max(1, int(round(width)))
-    height_i = max(1, int(round(width_i / OUT_ASPECT)))
     x = int(round(center_x - width_i / 2))
     y = int(round(center_y - height_i / 2))
     return clamp_rect(x, y, width_i, height_i, frame_w, frame_h)
 
 
 def crop_and_scale(frame, crop):
-    """Crop the source once and resize directly to the portrait output."""
+    """Crop once and preserve its aspect ratio inside the portrait output."""
     x, y, width, height = crop
     region = frame[y:y + height, x:x + width]
     if region.size == 0:
         raise ValueError(f"Empty crop: {crop}")
-    return cv2.resize(region, (OUT_W, OUT_H), interpolation=cv2.INTER_LINEAR)
+
+    if abs(width / height - OUT_ASPECT) < 0.002:
+        return cv2.resize(region, (OUT_W, OUT_H), interpolation=cv2.INTER_LINEAR)
+
+    scale = min(OUT_W / width, OUT_H / height)
+    render_w = min(OUT_W, max(1, int(round(width * scale))))
+    render_h = min(OUT_H, max(1, int(round(height * scale))))
+    resized = cv2.resize(region, (render_w, render_h), interpolation=cv2.INTER_LINEAR)
+
+    if (render_w, render_h) == (OUT_W, OUT_H):
+        return resized
+
+    output = np.zeros((OUT_H, OUT_W, 3), dtype=np.uint8)
+    offset_x = (OUT_W - render_w) // 2
+    offset_y = (OUT_H - render_h) // 2
+    output[offset_y:offset_y + render_h, offset_x:offset_x + render_w] = resized
+    return output
 
 
 def fourcc_to_text(value):
@@ -227,13 +267,45 @@ class GuidanceState:
                 self._target = target
                 self._last_birds_at = observed_at
 
-    def target_for(self, frame_w, frame_h, now, hold_seconds):
+    def view_for(
+        self,
+        frame_w,
+        frame_h,
+        now,
+        hold_seconds,
+        idle_enabled=True,
+        idle_after_seconds=3.0,
+    ):
+        """Return the current target crop and its presentation mode."""
         with self._lock:
             target = self._target
             last_birds_at = self._last_birds_at
-        if target is None or last_birds_at is None or now - last_birds_at > hold_seconds:
-            return overview_crop(frame_w, frame_h)
-        return clamp_rect(*target, frame_w, frame_h)
+
+        portrait_overview = overview_crop(frame_w, frame_h)
+        if target is None or last_birds_at is None:
+            if idle_enabled:
+                return full_frame_crop(frame_w, frame_h), "idle"
+            return portrait_overview, "overview"
+
+        bird_age = max(0.0, now - last_birds_at)
+        if bird_age <= max(0.0, hold_seconds):
+            return clamp_rect(*target, frame_w, frame_h), "tracking"
+
+        idle_threshold = max(max(0.0, hold_seconds), max(0.0, idle_after_seconds))
+        if idle_enabled and bird_age >= idle_threshold:
+            return full_frame_crop(frame_w, frame_h), "idle"
+        return portrait_overview, "overview"
+
+    def target_for(self, frame_w, frame_h, now, hold_seconds):
+        """Return portrait-only guidance for callers that do not use idle mode."""
+        target, _ = self.view_for(
+            frame_w,
+            frame_h,
+            now,
+            hold_seconds,
+            idle_enabled=False,
+        )
+        return target
 
     def status(self):
         with self._lock:
@@ -335,7 +407,12 @@ class GuidanceWorker(threading.Thread):
                 )
                 frame_h, frame_w = snapshot.frame.shape[:2]
                 target = compute_bird_crop(birds, frame_w, frame_h, tracker["padding"])
-                self.guidance.publish(target, len(birds), snapshot.captured_at, published_at=time.monotonic())
+                self.guidance.publish(
+                    target,
+                    len(birds),
+                    snapshot.captured_at,
+                    published_at=time.monotonic(),
+                )
                 next_sample = time.monotonic() + sample_period
         except Exception as exc:
             self.error = exc
@@ -381,12 +458,20 @@ class BirdCam:
             actual_fps,
             actual_fourcc or "unreported",
         )
-        requested = (camera.get("width", DEFAULT_FULL_W), camera.get("height", DEFAULT_FULL_H), camera.get("fps", 60))
+        requested = (
+            camera.get("width", DEFAULT_FULL_W),
+            camera.get("height", DEFAULT_FULL_H),
+            camera.get("fps", 60),
+        )
         if (actual_w, actual_h) != requested[:2] or actual_fps + 0.5 < requested[2]:
             logger.warning("Camera did not negotiate requested mode %dx%d @ %s fps", *requested)
         readable_fourcc = actual_fourcc.strip("\x00 ")
         if backend != cv2.CAP_MSMF and readable_fourcc != camera.get("fourcc", "MJPG"):
-            logger.warning("Camera negotiated %s instead of %s", readable_fourcc or "unknown", camera.get("fourcc", "MJPG"))
+            logger.warning(
+                "Camera negotiated %s instead of %s",
+                readable_fourcc or "unknown",
+                camera.get("fourcc", "MJPG"),
+            )
         return cap
 
     def start_streamer(self):
@@ -411,6 +496,9 @@ class BirdCam:
         stream_fps = max(1.0, float(self.config.get("stream", {}).get("fps", 60)))
         frame_period = 1.0 / stream_fps
         tracker = self.config["tracker"]
+        idle_view = self.config.get("idle_view", {})
+        idle_enabled = idle_view.get("enabled", True)
+        idle_after_seconds = idle_view.get("delay_seconds", 3.0)
         debug = self.config.get("debug", {})
         capture = CaptureWorker(self.open_camera, self.latest_frame, self.stop_event)
         guidance = GuidanceWorker(self.config, self.latest_frame, self.guidance, self.stop_event)
@@ -420,6 +508,7 @@ class BirdCam:
 
         current_crop = None
         current_shape = None
+        view_mode = "idle" if idle_enabled else "overview"
         last_render = None
         next_render = time.monotonic()
         last_sequence = 0
@@ -455,12 +544,23 @@ class BirdCam:
                 frame_h, frame_w = frame.shape[:2]
                 shape = (frame_w, frame_h)
                 if current_crop is None or current_shape != shape:
-                    current_crop = overview_crop(frame_w, frame_h)
+                    current_crop = (
+                        full_frame_crop(frame_w, frame_h)
+                        if idle_enabled
+                        else overview_crop(frame_w, frame_h)
+                    )
                     current_shape = shape
                     last_render = now
                     output = None
 
-                target_crop = self.guidance.target_for(frame_w, frame_h, now, tracker.get("hold_seconds", 1.0))
+                target_crop, view_mode = self.guidance.view_for(
+                    frame_w,
+                    frame_h,
+                    now,
+                    tracker.get("hold_seconds", 1.0),
+                    idle_enabled=idle_enabled,
+                    idle_after_seconds=idle_after_seconds,
+                )
                 elapsed = 0.0 if last_render is None else max(0.0, now - last_render)
                 last_render = now
                 next_crop = advance_crop(
@@ -473,7 +573,11 @@ class BirdCam:
                     tracker.get("max_pan_fraction_per_second", 0.25),
                 )
 
-                needs_resize = output is None or snapshot.sequence != last_sequence or next_crop != current_crop
+                needs_resize = (
+                    output is None
+                    or snapshot.sequence != last_sequence
+                    or next_crop != current_crop
+                )
                 current_crop = next_crop
                 if needs_resize:
                     resize_started = time.perf_counter()
@@ -499,12 +603,13 @@ class BirdCam:
                     guidance_age = None if guidance_at is None else logged_at - guidance_at
                     logger.info(
                         "Output FPS: %.1f | Capture FPS: %.1f | Resize: %.2f ms (%d/%d frames) | "
-                        "Birds: %d | Guidance age: %s | Crop: %s",
+                        "View: %s | Birds: %d | Guidance age: %s | Crop: %s",
                         fps,
                         capture_fps,
                         resize_ms,
                         resized_frames,
                         measured_frames,
+                        view_mode,
                         bird_count,
                         "n/a" if guidance_age is None else f"{guidance_age:.2f}s",
                         current_crop,
