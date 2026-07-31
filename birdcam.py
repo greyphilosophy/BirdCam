@@ -42,7 +42,14 @@ class BirdCam(_OptimizedBirdCam):
             stream_fps,
             _legacy.logger,
         )
-        virtual_camera.start()
+        try:
+            virtual_camera.start()
+        except Exception:
+            self.stop_event.set()
+            if self.streamer is not None:
+                self.streamer.stop()
+                self.streamer = None
+            raise
         if virtual_camera.enabled:
             self.streamer = CompositeOutput([self.streamer, virtual_camera])
 
