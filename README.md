@@ -31,7 +31,7 @@ The renderer never waits for YOLO. It keeps using the last known target while gu
 - **Birds leave:** The previous target is held briefly, then the view opens to the portrait overview and finally the full letterboxed idle view.
 - **Guidance falls behind:** Stale input frames are discarded; only the newest frame is analyzed.
 
-The transition between the wide idle view and portrait tracking is not a hard cut. BirdCam changes the crop width, height, and center using the same configured speed limits used for bird tracking. The black bars therefore grow or shrink gradually as the horizontal field of view changes.
+The transition between the wide idle view and portrait tracking is not a hard cut. BirdCam changes the crop width, height, and center using the same configured speed limits used for bird tracking. The black bars therefore grow or shrink gradually as the horizontal field of view changes. Transitions between two portrait tracking crops remain locked to the portrait aspect ratio, so ordinary bird-following zooms do not introduce black bars.
 
 ## Setup (Guardian452 — Windows 11 + RTX 4090)
 
