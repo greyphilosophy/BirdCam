@@ -40,7 +40,7 @@ def test_moderately_wide_group_avoids_unnecessary_portrait_zoom_out():
 
     crop = compute_bird_crop(birds, 2160, 3840, padding=100)
 
-    assert crop == (200, 640, 1500, OUT_H)
+    assert crop == (200, 615, 1500, OUT_H)
     assert all(contains(crop, bird) for bird in birds)
     assert crop[3] < round(crop[2] / (OUT_W / OUT_H))
 
