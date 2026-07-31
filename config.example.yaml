@@ -3,10 +3,11 @@
 
 camera:
   device: 0
+  backend: auto          # Windows auto selects MSMF; alternatives: msmf, dshow, any
   width: 3840
   height: 2160
   fps: 60
-  fourcc: MJPG          # Required for 4K60 on the ELP IMX678 USB camera
+  fourcc: MJPG           # MSMF may not report the underlying compressed FourCC
 
 detector:
   model_path: models/yolov8n.pt
