@@ -32,16 +32,32 @@ def test_multi_bird_crop_contains_every_detected_bird():
     assert crop[3] > OUT_H
 
 
-def test_widely_separated_birds_expand_to_available_overview():
+def test_widely_separated_birds_keep_group_centered_closeup():
     birds = [
-        (0, 600, 300, 1000),
-        (1860, 2800, 2160, 3300),
+        (50, 1400, 250, 1700),
+        (1910, 1500, 2110, 1800),
     ]
 
     crop = compute_bird_crop(birds, 2160, 3840, padding=200)
 
-    assert crop == (0, 0, 2160, 3840)
-    assert all(contains(crop, bird) for bird in birds)
+    assert crop == (540, 640, OUT_W, OUT_H)
+    assert crop != (0, 0, 2160, 3840)
+
+
+def test_multi_bird_crop_at_exact_frame_limit_stays_close():
+    birds = [
+        (100, 1400, 300, 1700),
+        (1860, 1500, 2060, 1800),
+    ]
+
+    crop = compute_bird_crop(birds, 2160, 3840, padding=100)
+
+    assert crop == (540, 640, OUT_W, OUT_H)
+    assert crop != (0, 0, 2160, 3840)
+
+
+def test_no_birds_still_produces_no_tracking_crop():
+    assert compute_bird_crop([], 2160, 3840, padding=200) is None
 
 
 def test_minimum_crop_preserves_center_when_expanding():
