@@ -73,13 +73,14 @@ def compute_bird_crop(birds, frame_w, frame_h, padding=200):
         crop_w = crop_h * legacy.OUT_ASPECT
 
     maximum = legacy.overview_crop(frame_w, frame_h)
-    if crop_w > maximum[2] or crop_h > maximum[3]:
+    reaches_maximum = crop_w >= maximum[2] or crop_h >= maximum[3]
+    if reaches_maximum and len(birds) >= 2:
         # Multiple birds should remain the visual focus even when their padded
-        # union cannot fit inside a portrait crop. Keep the closest lossless
-        # 1080x1920 view centered on the group instead of opening to the entire
-        # camera frame. Zero-bird idle framing is handled separately.
-        if len(birds) >= 2:
-            return _minimum_group_crop(center_x, center_y, frame_w, frame_h)
+        # union reaches or exceeds the widest portrait view. Keep the closest
+        # lossless 1080x1920 crop centered on the group instead of opening to
+        # the entire camera frame. Zero-bird idle framing is handled separately.
+        return _minimum_group_crop(center_x, center_y, frame_w, frame_h)
+    if crop_w > maximum[2] or crop_h > maximum[3]:
         return legacy.full_frame_crop(frame_w, frame_h)
 
     crop_w = max(legacy.OUT_W, int(round(crop_w)))
