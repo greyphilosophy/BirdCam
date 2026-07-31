@@ -8,6 +8,7 @@ camera:
   height: 2160
   fps: 60
   fourcc: MJPG           # MSMF may not report the underlying compressed FourCC
+  rotation_degrees: 90   # Rotate captured frames clockwise before detection and streaming
 
 detector:
   model_path: models/yolov8n.pt
@@ -24,12 +25,12 @@ tracker:
 
 idle_view:
   enabled: true
-  delay_seconds: 3.0    # After this long without birds, show the full 16:9 frame with black bars
+  delay_seconds: 3.0    # After this long without birds, show the complete rotated frame
 
 debug:
   window: true
   log_fps: true
-  preview_rotation: clockwise  # Rotate only the local preview; the vertical stream is unchanged
+  preview_rotation: clockwise  # Rotate only the local preview; stream orientation is unchanged
   preview_width: 1280          # Keep the preview inside a normal desktop window
   preview_height: 720
 
