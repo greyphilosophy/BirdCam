@@ -2,7 +2,7 @@
 
 A smooth 1080×1920 at 60 fps bird-feeder livestream guided by occasional AI detections from a 4K60 camera.
 
-**Target birds:** Steller's Jays (COCO class 16: "bird")
+**Target birds:** Steller's Jays (COCO class 14: "bird")
 
 ## How It Works
 
@@ -19,8 +19,8 @@ latest-frame slot (old frames are discarded)
         └── 60 fps renderer applies current crop
                 ↓
             one downscale to 1080×1920
-                ↓
-            FFmpeg / TikTok RTMP
+                ├── FFmpeg / TikTok RTMP
+                └── optional direct virtual camera
 ```
 
 The renderer never waits for YOLO. It keeps using the last known target while guidance processes a newer frame. Crop position and dimensions advance every output frame using time-based speed limits, so a slow or irregular detector cannot create camera jumps or sudden zooms.
@@ -70,6 +70,7 @@ Edit `config.yaml` with your settings:
 - `debug.preview_rotation`: Optional additional rotation applied only to the local preview
 - `debug.preview_width` / `preview_height`: Size of the resizable desktop preview window
 - `stream.rtmp_url`: TikTok RTMP URL and stream key
+- `virtual_camera.enabled`: Publish the finished BirdCam frame as a webcam device
 
 ### 4. Run
 
@@ -83,6 +84,33 @@ For the current sideways camera mounting, use `camera.rotation_degrees: 90` and
 clockwise preview rotation would rotate the already-corrected image a second
 time. Preview rotation remains available for unusual display arrangements, but
 it is independent of camera/source rotation.
+
+## Direct virtual-camera output
+
+BirdCam can publish its completed 1080×1920 frame directly as a camera device through `pyvirtualcam`. This avoids capturing the preview window and does not require the OBS application to remain open.
+
+On Windows, install OBS Studio once so the **OBS Virtual Camera** driver is available. OBS itself can stay closed while BirdCam is running.
+
+Enable the output in `config.yaml`:
+
+```yaml
+virtual_camera:
+  enabled: true
+  backend: obs
+  device: null
+```
+
+Start BirdCam normally:
+
+```cmd
+python birdcam.py
+```
+
+Then choose **OBS Virtual Camera** in the receiving application. BirdCam sends the same rendered frames used by the RTMP output, so both outputs may run at the same time.
+
+For virtual-camera-only operation, leave `stream.rtmp_url` empty or remove it from your local configuration. The virtual camera will still run at `stream.fps`, which defaults to 60.
+
+If startup reports that no virtual camera is available, confirm that the OBS Virtual Camera driver is installed and that another application is not exclusively holding the device.
 
 ## Camera diagnostics
 
