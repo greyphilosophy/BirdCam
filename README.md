@@ -61,12 +61,13 @@ Edit `config.yaml` with your settings:
 
 - `camera.device`: Camera device index, usually 0 or 1
 - `camera.backend`: Windows defaults to Media Foundation through `auto`
+- `camera.rotation_degrees`: Source-frame rotation applied before detection and streaming
 - `detector.max_fps`: Maximum AI guidance rate; 5 fps is the default
 - `tracker.max_zoom_fraction_per_second`: Maximum crop-size change per second
 - `tracker.max_pan_fraction_per_second`: Maximum crop-center movement per second
 - `idle_view.enabled`: Enable or disable the wide letterboxed waiting view
 - `idle_view.delay_seconds`: Time since the last bird before targeting the full-frame idle view
-- `debug.preview_rotation`: Rotation for the local preview; defaults to `clockwise`
+- `debug.preview_rotation`: Optional additional rotation applied only to the local preview
 - `debug.preview_width` / `preview_height`: Size of the resizable desktop preview window
 - `stream.rtmp_url`: TikTok RTMP URL and stream key
 
@@ -76,11 +77,12 @@ Edit `config.yaml` with your settings:
 python birdcam.py
 ```
 
-The local debug preview is rotated 90 degrees clockwise and displayed in a
-1280×720 resizable window by default. This keeps the complete 1080×1920 canvas
-visible and its letterboxed content centered on an ordinary landscape monitor.
-Preview rotation does not rotate or otherwise alter the livestream sent to
-FFmpeg. Set `debug.preview_rotation: none` to disable it.
+For the current sideways camera mounting, use `camera.rotation_degrees: 90` and
+`debug.preview_rotation: none`. Source rotation already makes detection, the
+1080×1920 stream, and the portrait debug preview upright. Applying another
+clockwise preview rotation would rotate the already-corrected image a second
+time. Preview rotation remains available for unusual display arrangements, but
+it is independent of camera/source rotation.
 
 ## Camera diagnostics
 
