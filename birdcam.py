@@ -18,6 +18,7 @@ logger = logging.getLogger("birdcam")
 OUT_W = 1080
 OUT_H = 1920
 OUT_ASPECT = OUT_W / OUT_H
+ASPECT_TOLERANCE = 0.002
 DEFAULT_FULL_W = 3840
 DEFAULT_FULL_H = 2160
 BIRD_CLASS_ID = 16
@@ -129,6 +130,66 @@ def _limited_dimension_step(current, target, maximum_delta):
     return current + integer_step if difference > 0 else current - integer_step
 
 
+def _aspect_ratios_match(width_a, height_a, width_b, height_b):
+    """Return whether two integer dimensions have the same presentation aspect."""
+    return abs(width_a / height_a - width_b / height_b) < ASPECT_TOLERANCE
+
+
+def _limited_matching_aspect_dimensions(
+    current_w,
+    current_h,
+    target_w,
+    target_h,
+    zoom_rate,
+    elapsed,
+):
+    """Advance dimensions together without drifting away from a shared aspect."""
+    target_aspect = target_w / target_h
+    max_width_delta = current_w * zoom_rate * elapsed
+    max_height_delta = current_h * zoom_rate * elapsed
+
+    def between(value, start, end):
+        return min(start, end) <= value <= max(start, end)
+
+    def valid(width, height):
+        return (
+            abs(width - current_w) <= max_width_delta + 1e-9
+            and abs(height - current_h) <= max_height_delta + 1e-9
+            and between(width, current_w, target_w)
+            and between(height, current_h, target_h)
+            and _aspect_ratios_match(width, height, target_w, target_h)
+        )
+
+    candidates = []
+
+    next_width = _limited_dimension_step(current_w, target_w, max_width_delta)
+    width_direction = 1 if target_w > current_w else -1
+    while next_width != current_w:
+        candidate = next_width, max(1, int(round(next_width / target_aspect)))
+        if valid(*candidate):
+            candidates.append(candidate)
+            break
+        next_width -= width_direction
+
+    next_height = _limited_dimension_step(current_h, target_h, max_height_delta)
+    height_direction = 1 if target_h > current_h else -1
+    while next_height != current_h:
+        candidate = max(1, int(round(next_height * target_aspect))), next_height
+        if valid(*candidate):
+            candidates.append(candidate)
+            break
+        next_height -= height_direction
+
+    if not candidates:
+        return current_w, current_h
+    return min(
+        candidates,
+        key=lambda dimensions: (
+            abs(target_w - dimensions[0]) + abs(target_h - dimensions[1])
+        ),
+    )
+
+
 def advance_crop(
     current: Crop,
     target: Crop,
@@ -147,10 +208,21 @@ def advance_crop(
     target_x, target_y, target_w, target_h = target
 
     zoom_rate = max(0.0, max_zoom_fraction_per_second)
-    max_width_delta = current_w * zoom_rate * elapsed
-    max_height_delta = current_h * zoom_rate * elapsed
-    width_i = _limited_dimension_step(current_w, target_w, max_width_delta)
-    height_i = _limited_dimension_step(current_h, target_h, max_height_delta)
+    if _aspect_ratios_match(current_w, current_h, target_w, target_h):
+        width_i, height_i = _limited_matching_aspect_dimensions(
+            current_w,
+            current_h,
+            target_w,
+            target_h,
+            zoom_rate,
+            elapsed,
+        )
+    else:
+        max_width_delta = current_w * zoom_rate * elapsed
+        max_height_delta = current_h * zoom_rate * elapsed
+        width_i = _limited_dimension_step(current_w, target_w, max_width_delta)
+        height_i = _limited_dimension_step(current_h, target_h, max_height_delta)
+
     width_i = max(1, min(width_i, frame_w))
     height_i = max(1, min(height_i, frame_h))
 
@@ -174,7 +246,7 @@ def crop_and_scale(frame, crop):
     if region.size == 0:
         raise ValueError(f"Empty crop: {crop}")
 
-    if abs(width / height - OUT_ASPECT) < 0.002:
+    if _aspect_ratios_match(width, height, OUT_W, OUT_H):
         return cv2.resize(region, (OUT_W, OUT_H), interpolation=cv2.INTER_LINEAR)
 
     scale = min(OUT_W / width, OUT_H / height)
