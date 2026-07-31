@@ -18,9 +18,13 @@ detector:
 
 tracker:
   padding: 200
-  hold_seconds: 1.0     # Keep the last target briefly after birds disappear
+  hold_seconds: 1.0     # Keep the last bird framing briefly after detection disappears
   max_zoom_fraction_per_second: 0.35  # Limit crop-size change to 35%/second
   max_pan_fraction_per_second: 0.25   # Limit center movement to 25% of frame/second
+
+idle_view:
+  enabled: true
+  delay_seconds: 3.0    # After this long without birds, show the full 16:9 frame with black bars
 
 debug:
   window: true
