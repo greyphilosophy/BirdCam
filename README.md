@@ -23,13 +23,15 @@ latest-frame slot (old frames are discarded)
             FFmpeg / TikTok RTMP
 ```
 
-The renderer never waits for YOLO. It keeps using the last known target while guidance processes a newer frame. Crop position and size advance every output frame using time-based speed limits, so a slow or irregular detector cannot create camera jumps or sudden zooms.
+The renderer never waits for YOLO. It keeps using the last known target while guidance processes a newer frame. Crop position and dimensions advance every output frame using time-based speed limits, so a slow or irregular detector cannot create camera jumps or sudden zooms.
 
-- **No birds:** Uses the widest centered portrait crop.
-- **Birds appear:** Guidance updates the target crop; the renderer approaches it smoothly.
+- **No birds yet:** Shows the complete 16:9 camera frame, centered in the vertical stream with black bars above and below.
+- **Birds appear:** Guidance updates the target crop; the renderer smoothly approaches a full-height portrait composition.
 - **Multiple birds:** The target expands to include them when they fit.
-- **Birds leave:** The previous target is held briefly, then the renderer smoothly returns to the overview.
+- **Birds leave:** The previous target is held briefly, then the view opens to the portrait overview and finally the full letterboxed idle view.
 - **Guidance falls behind:** Stale input frames are discarded; only the newest frame is analyzed.
+
+The transition between the wide idle view and portrait tracking is not a hard cut. BirdCam changes the crop width, height, and center using the same configured speed limits used for bird tracking. The black bars therefore grow or shrink gradually as the horizontal field of view changes. Transitions between two portrait tracking crops remain locked to the portrait aspect ratio, so ordinary bird-following zooms do not introduce black bars.
 
 ## Setup (Guardian452 — Windows 11 + RTX 4090)
 
@@ -58,9 +60,12 @@ copy config.example.yaml config.yaml
 Edit `config.yaml` with your settings:
 
 - `camera.device`: Camera device index, usually 0 or 1
+- `camera.backend`: Windows defaults to Media Foundation through `auto`
 - `detector.max_fps`: Maximum AI guidance rate; 5 fps is the default
 - `tracker.max_zoom_fraction_per_second`: Maximum crop-size change per second
 - `tracker.max_pan_fraction_per_second`: Maximum crop-center movement per second
+- `idle_view.enabled`: Enable or disable the wide letterboxed waiting view
+- `idle_view.delay_seconds`: Time since the last bird before targeting the full-frame idle view
 - `stream.rtmp_url`: TikTok RTMP URL and stream key
 
 ### 4. Run
@@ -109,6 +114,6 @@ OpenCV does not provide reliable UVC capability enumeration on Windows, so this 
 
 ## Performance Philosophy
 
-BirdCam does not run AI over every 4K input frame. The 4K stream is used as a continuously refreshed source image. Each output tick crops the newest available source frame and downsizes only that region to 1080p. Guidance can run at a few detections per second without reducing output frame rate.
+BirdCam does not run AI over every 4K input frame. The 4K stream is used as a continuously refreshed source image. Each output tick crops the newest available source frame and downsizes only that region to the vertical output. Guidance can run at a few detections per second without reducing output frame rate.
 
-The debug FPS log measures the audience-facing output path. It also reports the age of the most recent guidance result so capture/render performance and AI responsiveness can be evaluated separately.
+The renderer caches the most recent finished frame when neither the source frame nor crop has changed. Debug logs report audience-facing output FPS, measured capture FPS, resize cost, current view mode, and guidance age separately.
