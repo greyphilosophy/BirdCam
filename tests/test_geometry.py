@@ -1,4 +1,7 @@
-from birdcam import OUT_ASPECT, advance_crop, compute_bird_crop, overview_crop
+import cv2
+import numpy as np
+
+from birdcam import OUT_ASPECT, advance_crop, compute_bird_crop, crop_and_scale, overview_crop
 
 
 def test_compute_bird_crop_preserves_vertical_aspect_ratio():
@@ -28,6 +31,24 @@ def test_overview_crop_is_centered_and_vertical():
     assert abs(width / height - OUT_ASPECT) < 0.002
     assert x == (3840 - width) // 2
     assert y == 0
+
+
+def test_crop_and_scale_uses_linear_interpolation(monkeypatch):
+    frame = np.zeros((2160, 3840, 3), dtype=np.uint8)
+    called = {}
+
+    def fake_resize(region, size, interpolation):
+        called["shape"] = region.shape
+        called["size"] = size
+        called["interpolation"] = interpolation
+        return np.zeros((size[1], size[0], 3), dtype=np.uint8)
+
+    monkeypatch.setattr(cv2, "resize", fake_resize)
+    output = crop_and_scale(frame, overview_crop(3840, 2160))
+
+    assert output.shape == (1920, 1080, 3)
+    assert called["size"] == (1080, 1920)
+    assert called["interpolation"] == cv2.INTER_LINEAR
 
 
 def test_advance_crop_does_not_move_without_elapsed_time():
