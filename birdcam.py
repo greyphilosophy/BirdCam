@@ -23,6 +23,9 @@ DEFAULT_FULL_W = 3840
 DEFAULT_FULL_H = 2160
 BIRD_CLASS_ID = 16
 MAX_MOTION_STEP_SECONDS = 0.1
+DEBUG_WINDOW_NAME = "BirdCam"
+DEFAULT_PREVIEW_WIDTH = 1280
+DEFAULT_PREVIEW_HEIGHT = 720
 Crop = tuple[int, int, int, int]
 
 
@@ -161,7 +164,6 @@ def _limited_matching_aspect_dimensions(
         )
 
     candidates = []
-
     next_width = _limited_dimension_step(current_w, target_w, max_width_delta)
     width_direction = 1 if target_w > current_w else -1
     while next_width != current_w:
@@ -184,9 +186,7 @@ def _limited_matching_aspect_dimensions(
         return current_w, current_h
     return min(
         candidates,
-        key=lambda dimensions: (
-            abs(target_w - dimensions[0]) + abs(target_h - dimensions[1])
-        ),
+        key=lambda dimensions: abs(target_w - dimensions[0]) + abs(target_h - dimensions[1]),
     )
 
 
@@ -206,7 +206,6 @@ def advance_crop(
 
     current_x, current_y, current_w, current_h = current
     target_x, target_y, target_w, target_h = target
-
     zoom_rate = max(0.0, max_zoom_fraction_per_second)
     if _aspect_ratios_match(current_w, current_h, target_w, target_h):
         width_i, height_i = _limited_matching_aspect_dimensions(
@@ -218,14 +217,15 @@ def advance_crop(
             elapsed,
         )
     else:
-        max_width_delta = current_w * zoom_rate * elapsed
-        max_height_delta = current_h * zoom_rate * elapsed
-        width_i = _limited_dimension_step(current_w, target_w, max_width_delta)
-        height_i = _limited_dimension_step(current_h, target_h, max_height_delta)
+        width_i = _limited_dimension_step(
+            current_w, target_w, current_w * zoom_rate * elapsed
+        )
+        height_i = _limited_dimension_step(
+            current_h, target_h, current_h * zoom_rate * elapsed
+        )
 
     width_i = max(1, min(width_i, frame_w))
     height_i = max(1, min(height_i, frame_h))
-
     current_cx = current_x + current_w / 2
     current_cy = current_y + current_h / 2
     target_cx = target_x + target_w / 2
@@ -233,10 +233,14 @@ def advance_crop(
     max_pan_delta = max(frame_w, frame_h) * max(0.0, max_pan_fraction_per_second) * elapsed
     center_x = move_toward(current_cx, target_cx, max_pan_delta)
     center_y = move_toward(current_cy, target_cy, max_pan_delta)
-
-    x = int(round(center_x - width_i / 2))
-    y = int(round(center_y - height_i / 2))
-    return clamp_rect(x, y, width_i, height_i, frame_w, frame_h)
+    return clamp_rect(
+        int(round(center_x - width_i / 2)),
+        int(round(center_y - height_i / 2)),
+        width_i,
+        height_i,
+        frame_w,
+        frame_h,
+    )
 
 
 def crop_and_scale(frame, crop):
@@ -253,7 +257,6 @@ def crop_and_scale(frame, crop):
     render_w = min(OUT_W, max(1, int(round(width * scale))))
     render_h = min(OUT_H, max(1, int(round(height * scale))))
     resized = cv2.resize(region, (render_w, render_h), interpolation=cv2.INTER_LINEAR)
-
     if (render_w, render_h) == (OUT_W, OUT_H):
         return resized
 
@@ -265,7 +268,7 @@ def crop_and_scale(frame, crop):
 
 
 def rotate_frame(frame, degrees):
-    """Rotate a frame by a supported clockwise angle."""
+    """Rotate a captured frame by a supported clockwise angle."""
     normalized = int(degrees) % 360
     rotations = {
         0: None,
@@ -279,19 +282,6 @@ def rotate_frame(frame, degrees):
     return frame if rotation is None else cv2.rotate(frame, rotation)
 
 
-def fit_preview(frame, max_width=960, max_height=900):
-    """Scale a frame down to fit a desktop preview without clipping it."""
-    max_width = max(1, int(max_width))
-    max_height = max(1, int(max_height))
-    height, width = frame.shape[:2]
-    scale = min(max_width / width, max_height / height, 1.0)
-    if scale >= 1.0:
-        return frame
-    preview_w = max(1, int(round(width * scale)))
-    preview_h = max(1, int(round(height * scale)))
-    return cv2.resize(frame, (preview_w, preview_h), interpolation=cv2.INTER_AREA)
-
-
 def fourcc_to_text(value):
     value = int(value)
     return "".join(chr((value >> (8 * index)) & 0xFF) for index in range(4))
@@ -302,14 +292,41 @@ def camera_backend(name=None):
     normalized = (name or "").strip().lower()
     if normalized in {"", "auto"}:
         return cv2.CAP_MSMF if sys.platform == "win32" else cv2.CAP_ANY
-    choices = {
-        "msmf": cv2.CAP_MSMF,
-        "dshow": cv2.CAP_DSHOW,
-        "any": cv2.CAP_ANY,
-    }
+    choices = {"msmf": cv2.CAP_MSMF, "dshow": cv2.CAP_DSHOW, "any": cv2.CAP_ANY}
     if normalized not in choices:
         raise ValueError(f"Unsupported camera backend: {name!r}; use auto, msmf, dshow, or any")
     return choices[normalized]
+
+
+def prepare_debug_preview(frame, rotation="clockwise"):
+    """Rotate the local preview without changing the stream output frame."""
+    normalized = str(rotation or "none").strip().lower()
+    if normalized in {"none", "off", "0"}:
+        return frame
+    rotations = {
+        "clockwise": cv2.ROTATE_90_CLOCKWISE,
+        "cw": cv2.ROTATE_90_CLOCKWISE,
+        "90": cv2.ROTATE_90_CLOCKWISE,
+        "counterclockwise": cv2.ROTATE_90_COUNTERCLOCKWISE,
+        "ccw": cv2.ROTATE_90_COUNTERCLOCKWISE,
+        "-90": cv2.ROTATE_90_COUNTERCLOCKWISE,
+        "180": cv2.ROTATE_180,
+    }
+    if normalized not in rotations:
+        raise ValueError(
+            f"Unsupported preview rotation: {rotation!r}; "
+            "use clockwise, counterclockwise, 180, or none"
+        )
+    return cv2.rotate(frame, rotations[normalized])
+
+
+def configure_debug_window(debug, window_name=DEBUG_WINDOW_NAME):
+    """Create a resizable, aspect-preserving preview that fits on screen."""
+    width = max(1, int(debug.get("preview_width", DEFAULT_PREVIEW_WIDTH)))
+    height = max(1, int(debug.get("preview_height", DEFAULT_PREVIEW_HEIGHT)))
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+    cv2.resizeWindow(window_name, width, height)
+    return width, height
 
 
 @dataclass(frozen=True)
@@ -383,9 +400,11 @@ class GuidanceState:
 
         portrait_overview = overview_crop(frame_w, frame_h)
         if target is None or last_birds_at is None:
-            if idle_enabled:
-                return full_frame_crop(frame_w, frame_h), "idle"
-            return portrait_overview, "overview"
+            return (
+                (full_frame_crop(frame_w, frame_h), "idle")
+                if idle_enabled
+                else (portrait_overview, "overview")
+            )
 
         bird_age = max(0.0, now - last_birds_at)
         if bird_age <= max(0.0, hold_seconds):
@@ -397,13 +416,8 @@ class GuidanceState:
         return portrait_overview, "overview"
 
     def target_for(self, frame_w, frame_h, now, hold_seconds):
-        """Return portrait-only guidance for callers that do not use idle mode."""
         target, _ = self.view_for(
-            frame_w,
-            frame_h,
-            now,
-            hold_seconds,
-            idle_enabled=False,
+            frame_w, frame_h, now, hold_seconds, idle_enabled=False
         )
         return target
 
@@ -413,7 +427,7 @@ class GuidanceState:
 
 
 class CaptureWorker(threading.Thread):
-    """Continuously capture 4K frames and replace the latest-frame slot."""
+    """Continuously capture frames, rotate them, and replace the latest-frame slot."""
 
     def __init__(self, open_camera, latest_frame, stop_event, rotation_degrees=0):
         super().__init__(name="birdcam-capture", daemon=True)
@@ -472,7 +486,7 @@ class CaptureWorker(threading.Thread):
 
 
 class GuidanceWorker(threading.Thread):
-    """Sample only the newest 4K frame and update crop guidance independently."""
+    """Sample only the newest frame and update crop guidance independently."""
 
     def __init__(self, config, latest_frame, guidance, stop_event):
         super().__init__(name="birdcam-guidance", daemon=True)
@@ -488,8 +502,7 @@ class GuidanceWorker(threading.Thread):
         try:
             logger.info("Loading YOLO guidance model: %s", detector["model_path"])
             model = YOLO(detector["model_path"])
-            maximum_fps = max(0.1, float(detector.get("max_fps", 5.0)))
-            sample_period = 1.0 / maximum_fps
+            sample_period = 1.0 / max(0.1, float(detector.get("max_fps", 5.0)))
             sequence = 0
             next_sample = 0.0
             while not self.stop_event.is_set():
@@ -497,8 +510,7 @@ class GuidanceWorker(threading.Thread):
                 if snapshot is None:
                     continue
                 sequence = snapshot.sequence
-                now = time.monotonic()
-                if now < next_sample:
+                if time.monotonic() < next_sample:
                     continue
                 birds = detect_birds(
                     model,
@@ -508,9 +520,8 @@ class GuidanceWorker(threading.Thread):
                     detector.get("device", 0),
                 )
                 frame_h, frame_w = snapshot.frame.shape[:2]
-                target = compute_bird_crop(birds, frame_w, frame_h, tracker["padding"])
                 self.guidance.publish(
-                    target,
+                    compute_bird_crop(birds, frame_w, frame_h, tracker["padding"]),
                     len(birds),
                     snapshot.captured_at,
                     published_at=time.monotonic(),
@@ -604,6 +615,17 @@ class BirdCam:
         idle_enabled = idle_view.get("enabled", True)
         idle_after_seconds = idle_view.get("delay_seconds", 3.0)
         debug = self.config.get("debug", {})
+        preview_enabled = bool(debug.get("window", False))
+        preview_rotation = debug.get("preview_rotation", "clockwise")
+        if preview_enabled:
+            preview_width, preview_height = configure_debug_window(debug)
+            logger.info(
+                "Debug preview: %dx%d window, rotation=%s",
+                preview_width,
+                preview_height,
+                preview_rotation,
+            )
+
         capture = CaptureWorker(
             self.open_camera,
             self.latest_frame,
@@ -622,12 +644,11 @@ class BirdCam:
         next_render = time.monotonic()
         last_sequence = 0
         output = None
-        measured_frames = 0
-        resized_frames = 0
+        measured_frames = resized_frames = 0
         resize_seconds = 0.0
         fps_started = None
         logger.info(
-            "Starting independent 4K capture, guidance, and %.1f fps render paths; rotation=%s°",
+            "Starting capture, guidance, and %.1f fps render paths; source rotation=%s°",
             stream_fps,
             int(rotation_degrees) % 360,
         )
@@ -648,7 +669,6 @@ class BirdCam:
                         raise capture.error
                     self.stop_event.wait(0.01)
                     continue
-
                 if fps_started is None:
                     fps_started = now
                     next_render = now + frame_period
@@ -685,7 +705,6 @@ class BirdCam:
                     tracker.get("max_zoom_fraction_per_second", 0.35),
                     tracker.get("max_pan_fraction_per_second", 0.25),
                 )
-
                 needs_resize = (
                     output is None
                     or snapshot.sequence != last_sequence
@@ -701,13 +720,11 @@ class BirdCam:
 
                 if self.streamer:
                     self.streamer.send_frame(output)
-                if debug.get("window", False):
-                    preview = fit_preview(
-                        output,
-                        max_width=debug.get("preview_max_width", 960),
-                        max_height=debug.get("preview_max_height", 900),
+                if preview_enabled:
+                    cv2.imshow(
+                        DEBUG_WINDOW_NAME,
+                        prepare_debug_preview(output, preview_rotation),
                     )
-                    cv2.imshow("BirdCam", preview)
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         self.stop_event.set()
 
@@ -732,8 +749,7 @@ class BirdCam:
                         "n/a" if guidance_age is None else f"{guidance_age:.2f}s",
                         current_crop,
                     )
-                    measured_frames = 0
-                    resized_frames = 0
+                    measured_frames = resized_frames = 0
                     resize_seconds = 0.0
                     fps_started = logged_at
 
