@@ -38,13 +38,17 @@ def ensure_minimum_output_crop(crop, frame_w, frame_h):
     )
 
 
-def _minimum_group_crop(center_x, center_y, frame_w, frame_h):
-    """Return the closest allowed portrait view centered on a bird group."""
+def _minimum_enclosing_group_crop(x1, y1, x2, y2, frame_w, frame_h):
+    """Return the smallest available crop containing a padded bird group."""
+    center_x = (x1 + x2) / 2
+    center_y = (y1 + y2) / 2
+    crop_w = min(frame_w, max(legacy.OUT_W, int(round(x2 - x1))))
+    crop_h = min(frame_h, max(legacy.OUT_H, int(round(y2 - y1))))
     return legacy.clamp_rect(
-        int(round(center_x - legacy.OUT_W / 2)),
-        int(round(center_y - legacy.OUT_H / 2)),
-        legacy.OUT_W,
-        legacy.OUT_H,
+        int(round(center_x - crop_w / 2)),
+        int(round(center_y - crop_h / 2)),
+        crop_w,
+        crop_h,
         frame_w,
         frame_h,
     )
@@ -75,11 +79,11 @@ def compute_bird_crop(birds, frame_w, frame_h, padding=200):
     maximum = legacy.overview_crop(frame_w, frame_h)
     reaches_maximum = crop_w >= maximum[2] or crop_h >= maximum[3]
     if reaches_maximum and len(birds) >= 2:
-        # Multiple birds should remain the visual focus even when their padded
-        # union reaches or exceeds the widest portrait view. Keep the closest
-        # lossless 1080x1920 crop centered on the group instead of opening to
-        # the entire camera frame. Zero-bird idle framing is handled separately.
-        return _minimum_group_crop(center_x, center_y, frame_w, frame_h)
+        # A portrait crop large enough to contain this group would reach or
+        # exceed the complete view. Preserve every bird with the smallest
+        # available variable-aspect crop instead; the renderer will letterbox
+        # it into the portrait output when necessary.
+        return _minimum_enclosing_group_crop(x1, y1, x2, y2, frame_w, frame_h)
     if crop_w > maximum[2] or crop_h > maximum[3]:
         return legacy.full_frame_crop(frame_w, frame_h)
 
