@@ -8,7 +8,7 @@ camera:
   height: 2160
   fps: 60
   fourcc: MJPG           # MSMF may not report the underlying compressed FourCC
-  rotation_degrees: 90   # Rotate camera frames clockwise before detection and rendering
+  rotation_degrees: 90   # Rotate captured frames clockwise before detection and streaming
 
 detector:
   model_path: models/yolov8n.pt
@@ -30,8 +30,9 @@ idle_view:
 debug:
   window: true
   log_fps: true
-  preview_max_width: 960   # Downscale only the local preview; stream resolution is unchanged
-  preview_max_height: 900  # Keeps the complete portrait canvas visible and centered
+  preview_rotation: clockwise  # Rotate only the local preview; stream orientation is unchanged
+  preview_width: 1280          # Keep the preview inside a normal desktop window
+  preview_height: 720
 
 # The ELP camera has no microphone. Enable this only for a separate Windows
 # USB microphone. Find its exact DirectShow name with:
