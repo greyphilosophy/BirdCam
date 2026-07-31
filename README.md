@@ -69,6 +69,38 @@ Edit `config.yaml` with your settings:
 python birdcam.py
 ```
 
+## Camera diagnostics
+
+Windows camera drivers often report the requested frame rate even when they deliver fewer frames or silently substitute another pixel format. The diagnostic utility probes likely modes using both DirectShow and Media Foundation, then measures completed frame reads with a monotonic clock.
+
+Run the short 4K/MJPEG-focused probe first:
+
+```cmd
+python scripts\camera_diagnostic.py --quick
+```
+
+Run the complete probe matrix:
+
+```cmd
+python scripts\camera_diagnostic.py
+```
+
+Probe one exact request for a longer interval:
+
+```cmd
+python scripts\camera_diagnostic.py --backend dshow --duration 10 --mode MJPG:3840x2160:60
+```
+
+Each result shows:
+
+- requested pixel format, resolution, and frame rate
+- negotiated values reported by the driver
+- actual delivered FPS measured from successful reads
+- median and 95th-percentile frame intervals
+- failed reads and silent format/resolution fallbacks
+
+OpenCV does not provide reliable UVC capability enumeration on Windows, so this script probes a practical matrix rather than claiming to list every firmware-supported mode.
+
 ## Hardware
 
 - **Camera:** ELP High Speed 4K 60FPS USB Camera (IMX678 sensor)
