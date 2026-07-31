@@ -1,6 +1,5 @@
-from birdcam import (
-    OUT_H,
-    OUT_W,
+from birdcam import OUT_H, OUT_W
+from birdcam_framing import (
     advance_crop,
     compute_bird_crop,
     ensure_minimum_output_crop,
