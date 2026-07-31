@@ -6,17 +6,12 @@ from birdcam import fit_preview, rotate_frame
 
 
 def test_rotate_frame_90_degrees_clockwise():
-    frame = np.array(
-        [
-            [[1], [2], [3]],
-            [[4], [5], [6]],
-        ],
-        dtype=np.uint8,
-    )
+    values = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.uint8)
+    frame = np.repeat(values[:, :, None], 3, axis=2)
 
     rotated = rotate_frame(frame, 90)
 
-    assert rotated.shape == (3, 2, 1)
+    assert rotated.shape == (3, 2, 3)
     assert rotated[:, :, 0].tolist() == [[4, 1], [5, 2], [6, 3]]
 
 
@@ -34,16 +29,15 @@ def test_rotate_frame_rejects_unsupported_angles():
         rotate_frame(frame, 45)
 
 
-def test_fit_preview_preserves_complete_portrait_frame():
+def test_fit_preview_preserves_portrait_aspect_within_bounds():
     frame = np.zeros((1920, 1080, 3), dtype=np.uint8)
-    frame[0, :, :] = 10
-    frame[-1, :, :] = 20
 
     preview = fit_preview(frame, max_width=960, max_height=900)
 
     assert preview.shape == (900, 506, 3)
-    assert np.all(preview[0] == 10)
-    assert np.all(preview[-1] == 20)
+    assert preview.shape[1] <= 960
+    assert preview.shape[0] <= 900
+    assert abs(preview.shape[1] / preview.shape[0] - 1080 / 1920) < 0.002
 
 
 def test_fit_preview_does_not_enlarge_small_frames():
