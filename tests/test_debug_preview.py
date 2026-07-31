@@ -4,6 +4,8 @@ import pytest
 
 from birdcam import (
     DEBUG_WINDOW_NAME,
+    OUT_H,
+    OUT_W,
     configure_debug_window,
     prepare_debug_preview,
 )
@@ -21,12 +23,29 @@ def test_preview_rotates_90_degrees_clockwise_without_mutating_stream_frame():
     assert np.array_equal(frame, original)
 
 
-def test_preview_rotation_defaults_to_clockwise():
-    frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+def test_vertical_stream_canvas_becomes_landscape_preview_by_default():
+    frame = np.zeros((OUT_H, OUT_W, 3), dtype=np.uint8)
 
     preview = prepare_debug_preview(frame)
 
-    assert preview.shape == (1920, 1080, 3)
+    assert preview.shape == (OUT_W, OUT_H, 3)
+
+
+def test_centered_horizontal_letterbox_becomes_centered_vertical_letterbox():
+    frame = np.zeros((OUT_H, OUT_W, 3), dtype=np.uint8)
+    content_height = 608
+    top = (OUT_H - content_height) // 2
+    frame[top:top + content_height] = 255
+
+    preview = prepare_debug_preview(frame, "clockwise")
+    occupied = np.argwhere(preview[:, :, 0] > 0)
+    left = int(occupied[:, 1].min())
+    right = int(occupied[:, 1].max()) + 1
+
+    assert left == preview.shape[1] - right
+    assert np.all(preview[:, left:right] == 255)
+    assert np.all(preview[:, :left] == 0)
+    assert np.all(preview[:, right:] == 0)
 
 
 @pytest.mark.parametrize("rotation", [None, "none", "off", "0"])
