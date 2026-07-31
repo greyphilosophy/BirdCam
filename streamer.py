@@ -49,8 +49,6 @@ class RTMPStreamer:
             "warning",
             "-fflags",
             "nobuffer",
-            "-flags",
-            "low_delay",
             "-f",
             "rawvideo",
             "-pix_fmt",
@@ -77,7 +75,12 @@ class RTMPStreamer:
         else:
             command.append("-an")
 
-        command.extend(["-c:v", self.encoder])
+        command.extend([
+            "-c:v",
+            self.encoder,
+            "-flags:v",
+            "+low_delay",
+        ])
         if self.encoder == "libx264":
             command.extend([
                 "-threads",
