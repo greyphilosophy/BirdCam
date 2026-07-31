@@ -29,7 +29,20 @@ def test_multi_bird_crop_contains_every_detected_bird():
 
     assert all(contains(crop, bird) for bird in birds)
     assert crop[2] > OUT_W
-    assert crop[3] > OUT_H
+    assert crop[3] >= OUT_H
+
+
+def test_moderately_wide_group_avoids_unnecessary_portrait_zoom_out():
+    birds = [
+        (300, 1400, 500, 1700),
+        (1400, 1450, 1600, 1750),
+    ]
+
+    crop = compute_bird_crop(birds, 2160, 3840, padding=100)
+
+    assert crop == (200, 640, 1500, OUT_H)
+    assert all(contains(crop, bird) for bird in birds)
+    assert crop[3] < round(crop[2] / (OUT_W / OUT_H))
 
 
 def test_widely_separated_birds_use_minimum_enclosing_crop():
