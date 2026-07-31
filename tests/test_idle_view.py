@@ -1,6 +1,7 @@
 import numpy as np
 
 from birdcam import (
+    OUT_ASPECT,
     OUT_H,
     OUT_W,
     GuidanceState,
@@ -33,6 +34,34 @@ def test_portrait_tracking_view_still_fills_the_output():
 
     assert output.shape == (OUT_H, OUT_W, 3)
     assert np.all(output == 127)
+
+
+def test_portrait_tracking_transition_preserves_aspect_and_has_no_bars():
+    frame = np.full((2160, 3840, 3), 255, dtype=np.uint8)
+    current = overview_crop(3840, 2160)
+    target = (1700, 700, 540, 960)
+    first_advanced = None
+
+    for _ in range(100):
+        advanced = advance_crop(
+            current,
+            target,
+            elapsed=0.1,
+            frame_w=3840,
+            frame_h=2160,
+            max_zoom_fraction_per_second=0.35,
+            max_pan_fraction_per_second=0.25,
+        )
+        if first_advanced is None and advanced != current:
+            first_advanced = advanced
+        assert abs(advanced[2] / advanced[3] - OUT_ASPECT) < 0.002
+        current = advanced
+        if current == target:
+            break
+
+    assert current == target
+    assert first_advanced is not None
+    assert np.all(crop_and_scale(frame, first_advanced) == 255)
 
 
 def test_idle_view_is_used_before_any_bird_has_been_seen():
