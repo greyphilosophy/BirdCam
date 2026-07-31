@@ -4,12 +4,37 @@ import cv2
 import numpy as np
 import pytest
 
-from birdcam import CaptureWorker, LatestFrame, rotate_frame
+from birdcam import (
+    BIRD_CLASS_ID,
+    CaptureWorker,
+    LatestFrame,
+    detect_birds,
+    rotate_frame,
+)
 
 
 def sample_frame():
     values = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.uint8)
     return np.repeat(values[:, :, None], 3, axis=2)
+
+
+def test_coco_bird_class_is_14():
+    assert BIRD_CLASS_ID == 14
+
+
+def test_detect_birds_keeps_birds_and_rejects_dogs():
+    class Boxes:
+        xyxy = np.array([[1, 2, 3, 4], [5, 6, 7, 8]], dtype=float)
+        cls = np.array([14, 16], dtype=float)
+
+    class Result:
+        boxes = Boxes()
+
+    class Model:
+        def predict(self, *_args, **_kwargs):
+            return [Result()]
+
+    assert detect_birds(Model(), sample_frame()) == [(1, 2, 3, 4)]
 
 
 def test_rotate_frame_90_degrees_clockwise():
@@ -47,7 +72,7 @@ def test_rotate_frame_rejects_unsupported_angles():
         rotate_frame(sample_frame(), 45)
 
 
-def test_capture_worker_publishes_rotated_frame():
+def test_capture_worker_publishes_native_frame_without_rotation():
     stop_event = threading.Event()
     latest_frame = LatestFrame()
     source = sample_frame()
@@ -71,4 +96,5 @@ def test_capture_worker_publishes_rotated_frame():
     snapshot = latest_frame.get()
     assert worker.error is None
     assert snapshot is not None
-    assert snapshot.frame[:, :, 0].tolist() == [[4, 1], [5, 2], [6, 3]]
+    assert snapshot.frame is source
+    assert snapshot.frame.shape == (2, 3, 3)
