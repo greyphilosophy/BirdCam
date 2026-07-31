@@ -66,6 +66,8 @@ Edit `config.yaml` with your settings:
 - `tracker.max_pan_fraction_per_second`: Maximum crop-center movement per second
 - `idle_view.enabled`: Enable or disable the wide letterboxed waiting view
 - `idle_view.delay_seconds`: Time since the last bird before targeting the full-frame idle view
+- `debug.preview_rotation`: Rotation for the local preview; defaults to `clockwise`
+- `debug.preview_width` / `preview_height`: Size of the resizable desktop preview window
 - `stream.rtmp_url`: TikTok RTMP URL and stream key
 
 ### 4. Run
@@ -73,6 +75,12 @@ Edit `config.yaml` with your settings:
 ```cmd
 python birdcam.py
 ```
+
+The local debug preview is rotated 90 degrees clockwise and displayed in a
+1280×720 resizable window by default. This keeps the complete 1080×1920 canvas
+visible and its letterboxed content centered on an ordinary landscape monitor.
+Preview rotation does not rotate or otherwise alter the livestream sent to
+FFmpeg. Set `debug.preview_rotation: none` to disable it.
 
 ## Camera diagnostics
 

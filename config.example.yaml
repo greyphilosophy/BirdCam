@@ -29,6 +29,9 @@ idle_view:
 debug:
   window: true
   log_fps: true
+  preview_rotation: clockwise  # Rotate only the local preview; the vertical stream is unchanged
+  preview_width: 1280          # Keep the preview inside a normal desktop window
+  preview_height: 720
 
 # The ELP camera has no microphone. Enable this only for a separate Windows
 # USB microphone. Find its exact DirectShow name with:
