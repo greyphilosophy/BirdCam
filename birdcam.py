@@ -23,6 +23,9 @@ DEFAULT_FULL_W = 3840
 DEFAULT_FULL_H = 2160
 BIRD_CLASS_ID = 16
 MAX_MOTION_STEP_SECONDS = 0.1
+DEBUG_WINDOW_NAME = "BirdCam"
+DEFAULT_PREVIEW_WIDTH = 1280
+DEFAULT_PREVIEW_HEIGHT = 720
 Crop = tuple[int, int, int, int]
 
 
@@ -282,6 +285,38 @@ def camera_backend(name=None):
     if normalized not in choices:
         raise ValueError(f"Unsupported camera backend: {name!r}; use auto, msmf, dshow, or any")
     return choices[normalized]
+
+
+def prepare_debug_preview(frame, rotation="clockwise"):
+    """Rotate the local preview without changing the stream output frame."""
+    normalized = str(rotation or "none").strip().lower()
+    if normalized in {"none", "off", "0"}:
+        return frame
+
+    rotations = {
+        "clockwise": cv2.ROTATE_90_CLOCKWISE,
+        "cw": cv2.ROTATE_90_CLOCKWISE,
+        "90": cv2.ROTATE_90_CLOCKWISE,
+        "counterclockwise": cv2.ROTATE_90_COUNTERCLOCKWISE,
+        "ccw": cv2.ROTATE_90_COUNTERCLOCKWISE,
+        "-90": cv2.ROTATE_90_COUNTERCLOCKWISE,
+        "180": cv2.ROTATE_180,
+    }
+    if normalized not in rotations:
+        raise ValueError(
+            f"Unsupported preview rotation: {rotation!r}; "
+            "use clockwise, counterclockwise, 180, or none"
+        )
+    return cv2.rotate(frame, rotations[normalized])
+
+
+def configure_debug_window(debug, window_name=DEBUG_WINDOW_NAME):
+    """Create a resizable, aspect-preserving preview that fits on screen."""
+    width = max(1, int(debug.get("preview_width", DEFAULT_PREVIEW_WIDTH)))
+    height = max(1, int(debug.get("preview_height", DEFAULT_PREVIEW_HEIGHT)))
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+    cv2.resizeWindow(window_name, width, height)
+    return width, height
 
 
 @dataclass(frozen=True)
@@ -572,6 +607,16 @@ class BirdCam:
         idle_enabled = idle_view.get("enabled", True)
         idle_after_seconds = idle_view.get("delay_seconds", 3.0)
         debug = self.config.get("debug", {})
+        preview_enabled = bool(debug.get("window", False))
+        preview_rotation = debug.get("preview_rotation", "clockwise")
+        if preview_enabled:
+            preview_width, preview_height = configure_debug_window(debug)
+            logger.info(
+                "Debug preview: %dx%d window, rotation=%s (stream remains 1080x1920)",
+                preview_width,
+                preview_height,
+                preview_rotation,
+            )
         capture = CaptureWorker(self.open_camera, self.latest_frame, self.stop_event)
         guidance = GuidanceWorker(self.config, self.latest_frame, self.guidance, self.stop_event)
         capture.start()
@@ -660,8 +705,9 @@ class BirdCam:
 
                 if self.streamer:
                     self.streamer.send_frame(output)
-                if debug.get("window", False):
-                    cv2.imshow("BirdCam", output)
+                if preview_enabled:
+                    preview = prepare_debug_preview(output, preview_rotation)
+                    cv2.imshow(DEBUG_WINDOW_NAME, preview)
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         self.stop_event.set()
 
