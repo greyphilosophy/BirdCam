@@ -44,6 +44,18 @@ def test_widely_separated_birds_keep_group_centered_closeup():
     assert crop != (0, 0, 2160, 3840)
 
 
+def test_multi_bird_crop_at_exact_frame_limit_stays_close():
+    birds = [
+        (100, 1400, 300, 1700),
+        (1860, 1500, 2060, 1800),
+    ]
+
+    crop = compute_bird_crop(birds, 2160, 3840, padding=100)
+
+    assert crop == (540, 640, OUT_W, OUT_H)
+    assert crop != (0, 0, 2160, 3840)
+
+
 def test_no_birds_still_produces_no_tracking_crop():
     assert compute_bird_crop([], 2160, 3840, padding=200) is None
 
