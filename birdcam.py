@@ -264,6 +264,34 @@ def crop_and_scale(frame, crop):
     return output
 
 
+def rotate_frame(frame, degrees):
+    """Rotate a frame by a supported clockwise angle."""
+    normalized = int(degrees) % 360
+    rotations = {
+        0: None,
+        90: cv2.ROTATE_90_CLOCKWISE,
+        180: cv2.ROTATE_180,
+        270: cv2.ROTATE_90_COUNTERCLOCKWISE,
+    }
+    if normalized not in rotations:
+        raise ValueError("camera.rotation_degrees must be 0, 90, 180, or 270")
+    rotation = rotations[normalized]
+    return frame if rotation is None else cv2.rotate(frame, rotation)
+
+
+def fit_preview(frame, max_width=960, max_height=900):
+    """Scale a frame down to fit a desktop preview without clipping it."""
+    max_width = max(1, int(max_width))
+    max_height = max(1, int(max_height))
+    height, width = frame.shape[:2]
+    scale = min(max_width / width, max_height / height, 1.0)
+    if scale >= 1.0:
+        return frame
+    preview_w = max(1, int(round(width * scale)))
+    preview_h = max(1, int(round(height * scale)))
+    return cv2.resize(frame, (preview_w, preview_h), interpolation=cv2.INTER_AREA)
+
+
 def fourcc_to_text(value):
     value = int(value)
     return "".join(chr((value >> (8 * index)) & 0xFF) for index in range(4))
@@ -387,11 +415,12 @@ class GuidanceState:
 class CaptureWorker(threading.Thread):
     """Continuously capture 4K frames and replace the latest-frame slot."""
 
-    def __init__(self, open_camera, latest_frame, stop_event):
+    def __init__(self, open_camera, latest_frame, stop_event, rotation_degrees=0):
         super().__init__(name="birdcam-capture", daemon=True)
         self.open_camera = open_camera
         self.latest_frame = latest_frame
         self.stop_event = stop_event
+        self.rotation_degrees = rotation_degrees
         self.error = None
         self._metrics_lock = threading.Lock()
         self._captured_frames = 0
@@ -419,6 +448,7 @@ class CaptureWorker(threading.Thread):
                 ok, frame = cap.read()
                 if ok:
                     failures = 0
+                    frame = rotate_frame(frame, self.rotation_degrees)
                     self.latest_frame.publish(frame)
                     with self._metrics_lock:
                         self._captured_frames += 1
@@ -567,12 +597,19 @@ class BirdCam:
     def run(self):
         stream_fps = max(1.0, float(self.config.get("stream", {}).get("fps", 60)))
         frame_period = 1.0 / stream_fps
+        camera = self.config["camera"]
+        rotation_degrees = camera.get("rotation_degrees", 90)
         tracker = self.config["tracker"]
         idle_view = self.config.get("idle_view", {})
         idle_enabled = idle_view.get("enabled", True)
         idle_after_seconds = idle_view.get("delay_seconds", 3.0)
         debug = self.config.get("debug", {})
-        capture = CaptureWorker(self.open_camera, self.latest_frame, self.stop_event)
+        capture = CaptureWorker(
+            self.open_camera,
+            self.latest_frame,
+            self.stop_event,
+            rotation_degrees=rotation_degrees,
+        )
         guidance = GuidanceWorker(self.config, self.latest_frame, self.guidance, self.stop_event)
         capture.start()
         guidance.start()
@@ -589,7 +626,11 @@ class BirdCam:
         resized_frames = 0
         resize_seconds = 0.0
         fps_started = None
-        logger.info("Starting independent 4K capture, guidance, and %.1f fps render paths", stream_fps)
+        logger.info(
+            "Starting independent 4K capture, guidance, and %.1f fps render paths; rotation=%s°",
+            stream_fps,
+            int(rotation_degrees) % 360,
+        )
 
         try:
             while not self.stop_event.is_set():
@@ -661,7 +702,12 @@ class BirdCam:
                 if self.streamer:
                     self.streamer.send_frame(output)
                 if debug.get("window", False):
-                    cv2.imshow("BirdCam", output)
+                    preview = fit_preview(
+                        output,
+                        max_width=debug.get("preview_max_width", 960),
+                        max_height=debug.get("preview_max_height", 900),
+                    )
+                    cv2.imshow("BirdCam", preview)
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         self.stop_event.set()
 
