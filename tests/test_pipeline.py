@@ -1,6 +1,9 @@
+import cv2
 import numpy as np
+import pytest
 
-from birdcam import GuidanceState, LatestFrame, overview_crop
+import birdcam
+from birdcam import GuidanceState, LatestFrame, camera_backend, overview_crop
 
 
 def test_latest_frame_keeps_only_newest_snapshot():
@@ -47,3 +50,18 @@ def test_slow_result_expires_from_source_frame_time():
     guidance.publish(bird_crop, bird_count=1, observed_at=5.0, published_at=10.0)
 
     assert guidance.target_for(3840, 2160, now=10.5, hold_seconds=1.0) == overview_crop(3840, 2160)
+
+
+def test_windows_auto_backend_uses_media_foundation(monkeypatch):
+    monkeypatch.setattr(birdcam.sys, "platform", "win32")
+    assert camera_backend("auto") == cv2.CAP_MSMF
+    assert camera_backend(None) == cv2.CAP_MSMF
+
+
+def test_camera_backend_can_force_directshow():
+    assert camera_backend("dshow") == cv2.CAP_DSHOW
+
+
+def test_camera_backend_rejects_unknown_value():
+    with pytest.raises(ValueError, match="Unsupported camera backend"):
+        camera_backend("mystery")
