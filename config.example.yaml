@@ -34,6 +34,14 @@ debug:
   preview_width: 720           # Portrait preview window for the 1080x1920 stream canvas
   preview_height: 1280
 
+# Publish BirdCam's finished 1080x1920 BGR frames directly as a webcam device.
+# On Windows, install the OBS Virtual Camera driver, but OBS itself does not
+# need to be running. Streaming and virtual-camera output may run together.
+virtual_camera:
+  enabled: false
+  backend: obs           # pyvirtualcam backend; "obs" on Windows
+  device: null           # Optional exact virtual-camera device name
+
 # The ELP camera has no microphone. Enable this only for a separate Windows
 # USB microphone. Find its exact DirectShow name with:
 # ffmpeg -list_devices true -f dshow -i dummy
