@@ -69,6 +69,15 @@ def compute_bird_crop(birds, frame_w, frame_h, padding=200):
 
     needed_w = max(legacy.OUT_W, x2 - x1)
     needed_h = max(legacy.OUT_H, y2 - y1)
+
+    # Expanding a portrait crop to contain a horizontally spread group adds
+    # unrelated vertical scenery. For multiple birds, preserve the complete
+    # padded group with the smallest available wider crop instead; the renderer
+    # can letterbox it into the portrait output.
+    group_is_wider_than_portrait = needed_w / needed_h > legacy.OUT_ASPECT
+    if len(birds) >= 2 and group_is_wider_than_portrait:
+        return _minimum_enclosing_group_crop(x1, y1, x2, y2, frame_w, frame_h)
+
     if needed_w / needed_h > legacy.OUT_ASPECT:
         crop_w = needed_w
         crop_h = crop_w / legacy.OUT_ASPECT
@@ -77,13 +86,6 @@ def compute_bird_crop(birds, frame_w, frame_h, padding=200):
         crop_w = crop_h * legacy.OUT_ASPECT
 
     maximum = legacy.overview_crop(frame_w, frame_h)
-    reaches_maximum = crop_w >= maximum[2] or crop_h >= maximum[3]
-    if reaches_maximum and len(birds) >= 2:
-        # A portrait crop large enough to contain this group would reach or
-        # exceed the complete view. Preserve every bird with the smallest
-        # available variable-aspect crop instead; the renderer will letterbox
-        # it into the portrait output when necessary.
-        return _minimum_enclosing_group_crop(x1, y1, x2, y2, frame_w, frame_h)
     if crop_w > maximum[2] or crop_h > maximum[3]:
         return legacy.full_frame_crop(frame_w, frame_h)
 
