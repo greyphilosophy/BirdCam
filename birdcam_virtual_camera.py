@@ -51,9 +51,9 @@ class VirtualCameraOutput:
             self.camera.send(frame)
 
     def stop(self):
-        if self.camera is not None:
-            self.camera.close()
-            self.camera = None
+        camera, self.camera = self.camera, None
+        if camera is not None:
+            camera.close()
 
 
 class CompositeOutput:
@@ -67,5 +67,11 @@ class CompositeOutput:
             output.send_frame(frame)
 
     def stop(self):
+        first_error = None
         for output in reversed(self.outputs):
-            output.stop()
+            try:
+                output.stop()
+            except Exception as exc:  # Keep closing the remaining outputs.
+                first_error = first_error or exc
+        if first_error is not None:
+            raise first_error
