@@ -29,10 +29,23 @@ def test_multi_bird_crop_contains_every_detected_bird():
 
     assert all(contains(crop, bird) for bird in birds)
     assert crop[2] > OUT_W
-    assert crop[3] > OUT_H
+    assert crop[3] >= OUT_H
 
 
-def test_widely_separated_birds_keep_group_centered_closeup():
+def test_moderately_wide_group_avoids_unnecessary_portrait_zoom_out():
+    birds = [
+        (300, 1400, 500, 1700),
+        (1400, 1450, 1600, 1750),
+    ]
+
+    crop = compute_bird_crop(birds, 2160, 3840, padding=100)
+
+    assert crop == (200, 615, 1500, OUT_H)
+    assert all(contains(crop, bird) for bird in birds)
+    assert crop[3] < round(crop[2] / (OUT_W / OUT_H))
+
+
+def test_widely_separated_birds_use_minimum_enclosing_crop():
     birds = [
         (50, 1400, 250, 1700),
         (1910, 1500, 2110, 1800),
@@ -40,11 +53,12 @@ def test_widely_separated_birds_keep_group_centered_closeup():
 
     crop = compute_bird_crop(birds, 2160, 3840, padding=200)
 
-    assert crop == (540, 640, OUT_W, OUT_H)
+    assert crop == (0, 640, 2160, OUT_H)
     assert crop != (0, 0, 2160, 3840)
+    assert all(contains(crop, bird) for bird in birds)
 
 
-def test_multi_bird_crop_at_exact_frame_limit_stays_close():
+def test_multi_bird_crop_at_exact_frame_limit_preserves_both_birds():
     birds = [
         (100, 1400, 300, 1700),
         (1860, 1500, 2060, 1800),
@@ -52,8 +66,21 @@ def test_multi_bird_crop_at_exact_frame_limit_stays_close():
 
     crop = compute_bird_crop(birds, 2160, 3840, padding=100)
 
-    assert crop == (540, 640, OUT_W, OUT_H)
+    assert crop == (0, 640, 2160, OUT_H)
     assert crop != (0, 0, 2160, 3840)
+    assert all(contains(crop, bird) for bird in birds)
+
+
+def test_enclosing_crop_clamps_at_frame_edge_without_losing_birds():
+    birds = [
+        (0, 100, 180, 400),
+        (1980, 200, 2160, 500),
+    ]
+
+    crop = compute_bird_crop(birds, 2160, 3840, padding=200)
+
+    assert crop == (0, 0, 2160, OUT_H)
+    assert all(contains(crop, bird) for bird in birds)
 
 
 def test_no_birds_still_produces_no_tracking_crop():

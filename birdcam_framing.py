@@ -38,13 +38,17 @@ def ensure_minimum_output_crop(crop, frame_w, frame_h):
     )
 
 
-def _minimum_group_crop(center_x, center_y, frame_w, frame_h):
-    """Return the closest allowed portrait view centered on a bird group."""
+def _minimum_enclosing_group_crop(x1, y1, x2, y2, frame_w, frame_h):
+    """Return the smallest available crop containing a padded bird group."""
+    center_x = (x1 + x2) / 2
+    center_y = (y1 + y2) / 2
+    crop_w = min(frame_w, max(legacy.OUT_W, int(round(x2 - x1))))
+    crop_h = min(frame_h, max(legacy.OUT_H, int(round(y2 - y1))))
     return legacy.clamp_rect(
-        int(round(center_x - legacy.OUT_W / 2)),
-        int(round(center_y - legacy.OUT_H / 2)),
-        legacy.OUT_W,
-        legacy.OUT_H,
+        int(round(center_x - crop_w / 2)),
+        int(round(center_y - crop_h / 2)),
+        crop_w,
+        crop_h,
         frame_w,
         frame_h,
     )
@@ -65,6 +69,15 @@ def compute_bird_crop(birds, frame_w, frame_h, padding=200):
 
     needed_w = max(legacy.OUT_W, x2 - x1)
     needed_h = max(legacy.OUT_H, y2 - y1)
+
+    # Expanding a portrait crop to contain a horizontally spread group adds
+    # unrelated vertical scenery. For multiple birds, preserve the complete
+    # padded group with the smallest available wider crop instead; the renderer
+    # can letterbox it into the portrait output.
+    group_is_wider_than_portrait = needed_w / needed_h > legacy.OUT_ASPECT
+    if len(birds) >= 2 and group_is_wider_than_portrait:
+        return _minimum_enclosing_group_crop(x1, y1, x2, y2, frame_w, frame_h)
+
     if needed_w / needed_h > legacy.OUT_ASPECT:
         crop_w = needed_w
         crop_h = crop_w / legacy.OUT_ASPECT
@@ -73,13 +86,6 @@ def compute_bird_crop(birds, frame_w, frame_h, padding=200):
         crop_w = crop_h * legacy.OUT_ASPECT
 
     maximum = legacy.overview_crop(frame_w, frame_h)
-    reaches_maximum = crop_w >= maximum[2] or crop_h >= maximum[3]
-    if reaches_maximum and len(birds) >= 2:
-        # Multiple birds should remain the visual focus even when their padded
-        # union reaches or exceeds the widest portrait view. Keep the closest
-        # lossless 1080x1920 crop centered on the group instead of opening to
-        # the entire camera frame. Zero-bird idle framing is handled separately.
-        return _minimum_group_crop(center_x, center_y, frame_w, frame_h)
     if crop_w > maximum[2] or crop_h > maximum[3]:
         return legacy.full_frame_crop(frame_w, frame_h)
 
