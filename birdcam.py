@@ -144,13 +144,12 @@ def advance_crop(
 
 
 def crop_and_scale(frame, crop):
-    """Crop the 4K source once and downscale directly to 1080x1920."""
+    """Crop the source once and resize directly to the portrait output."""
     x, y, width, height = crop
     region = frame[y:y + height, x:x + width]
     if region.size == 0:
         raise ValueError(f"Empty crop: {crop}")
-    interpolation = cv2.INTER_AREA if width >= OUT_W and height >= OUT_H else cv2.INTER_LINEAR
-    return cv2.resize(region, (OUT_W, OUT_H), interpolation=interpolation)
+    return cv2.resize(region, (OUT_W, OUT_H), interpolation=cv2.INTER_LINEAR)
 
 
 def fourcc_to_text(value):
@@ -250,6 +249,18 @@ class CaptureWorker(threading.Thread):
         self.latest_frame = latest_frame
         self.stop_event = stop_event
         self.error = None
+        self._metrics_lock = threading.Lock()
+        self._captured_frames = 0
+        self._metrics_started = time.monotonic()
+
+    def metrics(self, now=None):
+        now = time.monotonic() if now is None else now
+        with self._metrics_lock:
+            elapsed = max(now - self._metrics_started, 0.001)
+            fps = self._captured_frames / elapsed
+            self._captured_frames = 0
+            self._metrics_started = now
+        return fps
 
     def run(self):
         cap = None
@@ -258,10 +269,15 @@ class CaptureWorker(threading.Thread):
             while not self.stop_event.is_set():
                 if cap is None:
                     cap = self.open_camera()
+                    with self._metrics_lock:
+                        self._captured_frames = 0
+                        self._metrics_started = time.monotonic()
                 ok, frame = cap.read()
                 if ok:
                     failures = 0
                     self.latest_frame.publish(frame)
+                    with self._metrics_lock:
+                        self._captured_frames += 1
                     continue
                 failures += 1
                 if failures < 10:
@@ -404,10 +420,14 @@ class BirdCam:
 
         current_crop = None
         current_shape = None
-        last_render = time.monotonic()
-        next_render = last_render
+        last_render = None
+        next_render = time.monotonic()
+        last_sequence = 0
+        output = None
         measured_frames = 0
-        fps_started = last_render
+        resized_frames = 0
+        resize_seconds = 0.0
+        fps_started = None
         logger.info("Starting independent 4K capture, guidance, and %.1f fps render paths", stream_fps)
 
         try:
@@ -427,6 +447,10 @@ class BirdCam:
                     self.stop_event.wait(0.01)
                     continue
 
+                if fps_started is None:
+                    fps_started = now
+                    next_render = now + frame_period
+
                 frame = snapshot.frame
                 frame_h, frame_w = frame.shape[:2]
                 shape = (frame_w, frame_h)
@@ -434,11 +458,12 @@ class BirdCam:
                     current_crop = overview_crop(frame_w, frame_h)
                     current_shape = shape
                     last_render = now
+                    output = None
 
                 target_crop = self.guidance.target_for(frame_w, frame_h, now, tracker.get("hold_seconds", 1.0))
-                elapsed = max(0.0, now - last_render)
+                elapsed = 0.0 if last_render is None else max(0.0, now - last_render)
                 last_render = now
-                current_crop = advance_crop(
+                next_crop = advance_crop(
                     current_crop,
                     target_crop,
                     elapsed,
@@ -447,7 +472,15 @@ class BirdCam:
                     tracker.get("max_zoom_fraction_per_second", 0.35),
                     tracker.get("max_pan_fraction_per_second", 0.25),
                 )
-                output = crop_and_scale(frame, current_crop)
+
+                needs_resize = output is None or snapshot.sequence != last_sequence or next_crop != current_crop
+                current_crop = next_crop
+                if needs_resize:
+                    resize_started = time.perf_counter()
+                    output = crop_and_scale(frame, current_crop)
+                    resize_seconds += time.perf_counter() - resize_started
+                    resized_frames += 1
+                    last_sequence = snapshot.sequence
 
                 if self.streamer:
                     self.streamer.send_frame(output)
@@ -460,16 +493,25 @@ class BirdCam:
                 if debug.get("log_fps", True) and measured_frames >= round(stream_fps):
                     logged_at = time.monotonic()
                     fps = measured_frames / max(logged_at - fps_started, 0.001)
+                    capture_fps = capture.metrics(logged_at)
+                    resize_ms = 1000.0 * resize_seconds / max(resized_frames, 1)
                     bird_count, guidance_at = self.guidance.status()
                     guidance_age = None if guidance_at is None else logged_at - guidance_at
                     logger.info(
-                        "Output FPS: %.1f | Birds: %d | Guidance age: %s | Crop: %s",
+                        "Output FPS: %.1f | Capture FPS: %.1f | Resize: %.2f ms (%d/%d frames) | "
+                        "Birds: %d | Guidance age: %s | Crop: %s",
                         fps,
+                        capture_fps,
+                        resize_ms,
+                        resized_frames,
+                        measured_frames,
                         bird_count,
                         "n/a" if guidance_age is None else f"{guidance_age:.2f}s",
                         current_crop,
                     )
                     measured_frames = 0
+                    resized_frames = 0
+                    resize_seconds = 0.0
                     fps_started = logged_at
 
                 if capture.error:
