@@ -15,11 +15,34 @@ def test_rotate_frame_90_degrees_clockwise():
     assert rotated[:, :, 0].tolist() == [[4, 1], [5, 2], [6, 3]]
 
 
-def test_rotate_frame_accepts_full_turns():
+def test_rotate_frame_180_degrees():
+    values = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.uint8)
+    frame = np.repeat(values[:, :, None], 3, axis=2)
+
+    rotated = rotate_frame(frame, 180)
+
+    assert rotated[:, :, 0].tolist() == [[6, 5, 4], [3, 2, 1]]
+
+
+def test_rotate_frame_270_degrees_clockwise():
+    values = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.uint8)
+    frame = np.repeat(values[:, :, None], 3, axis=2)
+
+    rotated = rotate_frame(frame, 270)
+
+    assert rotated.shape == (3, 2, 3)
+    assert rotated[:, :, 0].tolist() == [[3, 6], [2, 5], [1, 4]]
+
+
+def test_rotate_frame_accepts_full_turns_and_negative_angles():
     frame = np.arange(12, dtype=np.uint8).reshape(2, 2, 3)
 
     assert rotate_frame(frame, 360) is frame
     assert np.array_equal(rotate_frame(frame, 450), cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE))
+    assert np.array_equal(
+        rotate_frame(frame, -90),
+        cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE),
+    )
 
 
 def test_rotate_frame_rejects_unsupported_angles():
