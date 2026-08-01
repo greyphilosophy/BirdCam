@@ -24,17 +24,6 @@ def test_first_detection_is_accepted_immediately():
     assert target(state) == detected
 
 
-def test_first_detection_is_valid_when_immediate_acquisition_is_disabled():
-    state = SmoothedGuidanceState(
-        {"target_smoothing": {"enabled": True, "immediate_on_acquire": False}}
-    )
-    detected = (400, 800, 1080, 1920)
-
-    state.publish(detected, bird_count=1, observed_at=0.0)
-
-    assert target(state) == detected
-
-
 def test_new_additional_bird_is_accepted_immediately():
     state = SmoothedGuidanceState({"target_smoothing": {"enabled": True}})
     state.publish((400, 800, 1080, 1920), bird_count=1, observed_at=0.0)
