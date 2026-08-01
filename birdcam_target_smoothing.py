@@ -51,6 +51,15 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             max(1, int(round(height))),
         )
 
+    @staticmethod
+    def _enclose(crop, required):
+        """Expand crop just enough to include the newest raw detection target."""
+        x1 = min(crop[0], required[0])
+        y1 = min(crop[1], required[1])
+        x2 = max(crop[0] + crop[2], required[0] + required[2])
+        y2 = max(crop[1] + crop[3], required[1] + required[3])
+        return x1, y1, x2 - x1, y2 - y1
+
     def _smooth_target(self, previous, target):
         previous_x, previous_y = self._center(previous)
         target_x, target_y = self._center(target)
@@ -71,7 +80,8 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             width = previous_w + self._size_alpha * (target_w - previous_w)
             height = previous_h + self._size_alpha * (target_h - previous_h)
 
-        return self._crop_from_center(center_x, center_y, width, height)
+        smoothed = self._crop_from_center(center_x, center_y, width, height)
+        return self._enclose(smoothed, target)
 
     def publish(self, target, bird_count, observed_at, published_at=None):
         with self._lock:
