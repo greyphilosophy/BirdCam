@@ -6,6 +6,15 @@ def target(state, now=0.0):
     return state.target_for(2160, 3840, now, hold_seconds=1.0)
 
 
+def contains(crop, required):
+    return (
+        crop[0] <= required[0]
+        and crop[1] <= required[1]
+        and crop[0] + crop[2] >= required[0] + required[2]
+        and crop[1] + crop[3] >= required[1] + required[3]
+    )
+
+
 def test_first_detection_is_accepted_immediately():
     state = SmoothedGuidanceState({"target_smoothing": {"enabled": True}})
     detected = (400, 800, 1080, 1920)
@@ -54,7 +63,7 @@ def test_small_detector_jitter_stays_inside_dead_zone():
     assert target(state, now=0.2) == original
 
 
-def test_meaningful_tracking_changes_are_smoothed():
+def test_meaningful_expansion_contains_current_detection_immediately():
     state = SmoothedGuidanceState(
         {
             "target_smoothing": {
@@ -67,10 +76,33 @@ def test_meaningful_tracking_changes_are_smoothed():
         }
     )
     state.publish((100, 200, 1080, 1920), bird_count=1, observed_at=0.0)
+    expanded = (500, 600, 1480, 2320)
 
-    state.publish((500, 600, 1480, 2320), bird_count=1, observed_at=0.2)
+    state.publish(expanded, bird_count=1, observed_at=0.2)
 
-    assert target(state, now=0.2) == (350, 450, 1180, 2020)
+    assert contains(target(state, now=0.2), expanded)
+    assert target(state, now=0.2) == expanded
+
+
+def test_safe_contraction_and_recentering_are_smoothed():
+    state = SmoothedGuidanceState(
+        {
+            "target_smoothing": {
+                "enabled": True,
+                "center_alpha": 0.5,
+                "size_alpha": 0.25,
+                "pan_dead_zone_pixels": 0,
+                "zoom_dead_zone_fraction": 0,
+            }
+        }
+    )
+    state.publish((100, 200, 1480, 2320), bird_count=1, observed_at=0.0)
+    smaller = (500, 600, 1080, 1920)
+
+    state.publish(smaller, bird_count=1, observed_at=0.2)
+
+    assert target(state, now=0.2) == (250, 350, 1380, 2220)
+    assert contains(target(state, now=0.2), smaller)
 
 
 def test_reacquisition_after_empty_detection_is_immediate():
@@ -106,10 +138,10 @@ def test_invalid_numeric_config_falls_back_to_safe_defaults():
         }
     )
 
-    state.publish((100, 200, 1080, 1920), bird_count=1, observed_at=0.0)
-    state.publish((500, 600, 1480, 2320), bird_count=1, observed_at=0.2)
+    state.publish((100, 200, 1480, 2320), bird_count=1, observed_at=0.0)
+    state.publish((500, 600, 1080, 1920), bird_count=1, observed_at=0.2)
 
-    assert target(state, now=0.2) == (256, 356, 1128, 1968)
+    assert target(state, now=0.2) == (184, 284, 1432, 2272)
 
 
 def test_birdcam_uses_smoothed_guidance_without_touching_render_loop():
