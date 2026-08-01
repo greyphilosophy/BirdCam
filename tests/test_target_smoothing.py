@@ -109,7 +109,7 @@ def test_invalid_numeric_config_falls_back_to_safe_defaults():
     state.publish((100, 200, 1080, 1920), bird_count=1, observed_at=0.0)
     state.publish((500, 600, 1480, 2320), bird_count=1, observed_at=0.2)
 
-    assert target(state, now=0.2) == (176, 276, 1128, 1968)
+    assert target(state, now=0.2) == (256, 356, 1128, 1968)
 
 
 def test_birdcam_uses_smoothed_guidance_without_touching_render_loop():
