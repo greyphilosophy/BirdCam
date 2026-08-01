@@ -72,15 +72,24 @@ class SmoothedGuidanceState(legacy.GuidanceState):
         previous_w, previous_h = previous[2], previous[3]
         target_w, target_h = target[2], target[3]
 
-        if max(abs(target_x - previous_x), abs(target_y - previous_y)) <= self._pan_dead_zone:
+        pan_is_jitter = (
+            max(abs(target_x - previous_x), abs(target_y - previous_y))
+            <= self._pan_dead_zone
+        )
+        width_change = abs(target_w - previous_w) / max(previous_w, 1)
+        height_change = abs(target_h - previous_h) / max(previous_h, 1)
+        size_is_jitter = max(width_change, height_change) <= self._zoom_dead_zone
+
+        if pan_is_jitter and size_is_jitter:
+            return previous
+
+        if pan_is_jitter:
             center_x, center_y = previous_x, previous_y
         else:
             center_x = previous_x + self._center_alpha * (target_x - previous_x)
             center_y = previous_y + self._center_alpha * (target_y - previous_y)
 
-        width_change = abs(target_w - previous_w) / max(previous_w, 1)
-        height_change = abs(target_h - previous_h) / max(previous_h, 1)
-        if max(width_change, height_change) <= self._zoom_dead_zone:
+        if size_is_jitter:
             width, height = previous_w, previous_h
         else:
             width = previous_w + self._size_alpha * (target_w - previous_w)
