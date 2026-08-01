@@ -36,6 +36,10 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             0.04,
         )
         self._immediate_on_acquire = bool(config.get("immediate_on_acquire", True))
+        self._hold_seconds = _nonnegative_float(
+            tracker_config.get("hold_seconds", 1.0),
+            1.0,
+        )
 
     @staticmethod
     def _center(crop):
@@ -102,13 +106,20 @@ class SmoothedGuidanceState(legacy.GuidanceState):
         with self._lock:
             previous_count = self._bird_count
             previous_target = self._target
+            last_birds_at = self._last_birds_at
             self._bird_count = bird_count
             self._updated_at = observed_at
             if not bird_count or target is None:
                 return
 
             first_target = previous_target is None
-            newly_added_bird = bird_count > previous_count
+            recently_tracking = (
+                last_birds_at is not None
+                and max(0.0, observed_at - last_birds_at) <= self._hold_seconds
+            )
+            newly_added_bird = bird_count > previous_count and not (
+                previous_count == 0 and recently_tracking
+            )
             if (
                 not self._smoothing_enabled
                 or first_target
