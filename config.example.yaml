@@ -28,7 +28,6 @@ tracker:
     size_alpha: 0.12             # Follow 12% of meaningful crop-size change per detection
     pan_dead_zone_pixels: 30     # Ignore smaller detector-box center fluctuations
     zoom_dead_zone_fraction: 0.04 # Ignore crop-size changes below 4%
-    immediate_on_acquire: true   # Accept the first/new-bird target without smoothing delay
 
 idle_view:
   enabled: true
