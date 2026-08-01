@@ -10,6 +10,13 @@ def _bounded_alpha(value, default):
         return default
 
 
+def _nonnegative_float(value, default):
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return default
+
+
 class SmoothedGuidanceState(legacy.GuidanceState):
     """Filter detector jitter while accepting newly appearing birds immediately."""
 
@@ -20,10 +27,13 @@ class SmoothedGuidanceState(legacy.GuidanceState):
         self._smoothing_enabled = bool(config.get("enabled", True))
         self._center_alpha = _bounded_alpha(config.get("center_alpha", 0.30), 0.30)
         self._size_alpha = _bounded_alpha(config.get("size_alpha", 0.12), 0.12)
-        self._pan_dead_zone = max(0.0, float(config.get("pan_dead_zone_pixels", 30)))
-        self._zoom_dead_zone = max(
-            0.0,
-            float(config.get("zoom_dead_zone_fraction", 0.04)),
+        self._pan_dead_zone = _nonnegative_float(
+            config.get("pan_dead_zone_pixels", 30),
+            30.0,
+        )
+        self._zoom_dead_zone = _nonnegative_float(
+            config.get("zoom_dead_zone_fraction", 0.04),
+            0.04,
         )
         self._immediate_on_acquire = bool(config.get("immediate_on_acquire", True))
 
@@ -72,10 +82,12 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             if not bird_count or target is None:
                 return
 
-            newly_acquired = previous_target is None or bird_count > previous_count
+            first_target = previous_target is None
+            newly_added_bird = bird_count > previous_count
             if (
                 not self._smoothing_enabled
-                or (self._immediate_on_acquire and newly_acquired)
+                or first_target
+                or (self._immediate_on_acquire and newly_added_bird)
             ):
                 self._target = target
             else:
