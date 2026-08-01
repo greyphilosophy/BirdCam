@@ -14,6 +14,8 @@ ELP camera at 4K60
 latest-frame slot (old frames are discarded)
         ├── guidance worker samples newest frame at up to 5 fps
         │       ↓
+        │   dead-zone and target smoothing
+        │       ↓
         │   latest target crop
         │
         └── 60 fps renderer applies current crop
@@ -26,8 +28,9 @@ latest-frame slot (old frames are discarded)
 The renderer never waits for YOLO. It keeps using the last known target while guidance processes a newer frame. Crop position and dimensions advance every output frame using time-based speed limits, so a slow or irregular detector cannot create camera jumps or sudden zooms.
 
 - **No birds yet:** Shows the complete 16:9 camera frame, centered in the vertical stream with black bars above and below.
-- **Birds appear:** Guidance updates the target crop; the renderer smoothly approaches a full-height portrait composition.
-- **Multiple birds:** The target expands to include them when they fit.
+- **Birds appear:** The first target is accepted immediately; the renderer smoothly approaches it.
+- **Birds remain:** Small detector-box fluctuations are ignored and safe contraction/recentering is smoothed.
+- **Multiple birds:** A newly increased bird count is accepted immediately, and meaningful target expansion always remains large enough to contain the latest detected group.
 - **Birds leave:** The previous target is held briefly, then the view opens to the portrait overview and finally the full letterboxed idle view.
 - **Guidance falls behind:** Stale input frames are discarded; only the newest frame is analyzed.
 
@@ -65,6 +68,7 @@ Edit `config.yaml` with your settings:
 - `detector.max_fps`: Maximum AI guidance rate; 5 fps is the default
 - `tracker.max_zoom_fraction_per_second`: Maximum crop-size change per second
 - `tracker.max_pan_fraction_per_second`: Maximum crop-center movement per second
+- `tracker.target_smoothing`: Detector-target dead zones and low-frequency smoothing
 - `idle_view.enabled`: Enable or disable the wide letterboxed waiting view
 - `idle_view.delay_seconds`: Time since the last bird before targeting the full-frame idle view
 - `debug.preview_rotation`: Optional additional rotation applied only to the local preview
@@ -84,6 +88,27 @@ For the current sideways camera mounting, use `camera.rotation_degrees: 90` and
 clockwise preview rotation would rotate the already-corrected image a second
 time. Preview rotation remains available for unusual display arrangements, but
 it is independent of camera/source rotation.
+
+## Tracking smoothing
+
+BirdCam filters guidance targets only when a new detector result arrives, normally at up to `detector.max_fps` (5 fps by default). The 60 fps capture, render, RTMP, and virtual-camera paths are unchanged.
+
+The default configuration is:
+
+```yaml
+tracker:
+  target_smoothing:
+    enabled: true
+    center_alpha: 0.30
+    size_alpha: 0.12
+    pan_dead_zone_pixels: 30
+    zoom_dead_zone_fraction: 0.04
+    immediate_on_acquire: true
+```
+
+The first detection, reacquisition after an empty detection, and an increased bird count are accepted immediately. Small center and size fluctuations are held inside the dead zones. Meaningful expansion is never reduced below the newest raw detection target, while safe contraction and recentering use the configured smoothing values. The existing per-frame pan and zoom limits still control what viewers see, so immediate guidance does not become an abrupt video cut.
+
+Because this filter performs only a fixed number of scalar operations per guidance update, it should not materially affect output frame rate.
 
 ## Direct virtual-camera output
 
