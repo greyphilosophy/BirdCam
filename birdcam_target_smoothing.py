@@ -35,7 +35,6 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             config.get("zoom_dead_zone_fraction", 0.04),
             0.04,
         )
-        self._immediate_on_acquire = bool(config.get("immediate_on_acquire", True))
         self._hold_seconds = _nonnegative_float(
             tracker_config.get("hold_seconds", 1.0),
             1.0,
@@ -120,11 +119,7 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             newly_added_bird = bird_count > previous_count and not (
                 previous_count == 0 and recently_tracking
             )
-            if (
-                not self._smoothing_enabled
-                or first_target
-                or (self._immediate_on_acquire and newly_added_bird)
-            ):
+            if not self._smoothing_enabled or first_target or newly_added_bird:
                 self._target = target
             else:
                 self._target = self._smooth_target(previous_target, target)
