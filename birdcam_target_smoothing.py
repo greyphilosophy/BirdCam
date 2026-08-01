@@ -51,14 +51,20 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             max(1, int(round(height))),
         )
 
-    @staticmethod
-    def _enclose(crop, required):
-        """Expand crop just enough to include the newest raw detection target."""
-        x1 = min(crop[0], required[0])
-        y1 = min(crop[1], required[1])
-        x2 = max(crop[0] + crop[2], required[0] + required[2])
-        y2 = max(crop[1] + crop[3], required[1] + required[3])
-        return x1, y1, x2 - x1, y2 - y1
+    @classmethod
+    def _ensure_contains(cls, crop, required):
+        """Return the smallest crop near crop's center that contains required."""
+        center_x, center_y = cls._center(crop)
+        width = max(crop[2], required[2])
+        height = max(crop[3], required[3])
+
+        minimum_center_x = required[0] + required[2] - width / 2
+        maximum_center_x = required[0] + width / 2
+        minimum_center_y = required[1] + required[3] - height / 2
+        maximum_center_y = required[1] + height / 2
+        center_x = legacy.clamp(center_x, minimum_center_x, maximum_center_x)
+        center_y = legacy.clamp(center_y, minimum_center_y, maximum_center_y)
+        return cls._crop_from_center(center_x, center_y, width, height)
 
     def _smooth_target(self, previous, target):
         previous_x, previous_y = self._center(previous)
@@ -81,7 +87,7 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             height = previous_h + self._size_alpha * (target_h - previous_h)
 
         smoothed = self._crop_from_center(center_x, center_y, width, height)
-        return self._enclose(smoothed, target)
+        return self._ensure_contains(smoothed, target)
 
     def publish(self, target, bird_count, observed_at, published_at=None):
         with self._lock:
