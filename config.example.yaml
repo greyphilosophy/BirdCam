@@ -22,6 +22,13 @@ tracker:
   hold_seconds: 1.0     # Keep the last bird framing briefly after detection disappears
   max_zoom_fraction_per_second: 0.35  # Limit crop-size change to 35%/second
   max_pan_fraction_per_second: 0.25   # Limit center movement to 25% of frame/second
+  target_smoothing:
+    enabled: true
+    center_alpha: 0.30           # Follow 30% of meaningful center movement per detection
+    size_alpha: 0.12             # Follow 12% of meaningful crop-size change per detection
+    pan_dead_zone_pixels: 30     # Ignore smaller detector-box center fluctuations
+    zoom_dead_zone_fraction: 0.04 # Ignore crop-size changes below 4%
+    immediate_on_acquire: true   # Accept the first/new-bird target without smoothing delay
 
 idle_view:
   enabled: true
