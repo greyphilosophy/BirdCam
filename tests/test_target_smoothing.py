@@ -105,15 +105,31 @@ def test_safe_contraction_and_recentering_are_smoothed():
     assert contains(target(state, now=0.2), smaller)
 
 
-def test_reacquisition_after_empty_detection_is_immediate():
-    state = SmoothedGuidanceState({"target_smoothing": {"enabled": True}})
+def test_brief_empty_detection_remains_continuous_tracking():
+    state = SmoothedGuidanceState(
+        {"hold_seconds": 1.0, "target_smoothing": {"enabled": True}}
+    )
+    state.publish((100, 200, 1480, 2320), bird_count=1, observed_at=0.0)
+    state.publish(None, bird_count=0, observed_at=0.2)
+    continued = (500, 600, 1080, 1920)
+
+    state.publish(continued, bird_count=1, observed_at=0.4)
+
+    assert target(state, now=0.4) == (184, 284, 1432, 2272)
+    assert contains(target(state, now=0.4), continued)
+
+
+def test_reacquisition_after_hold_period_is_immediate():
+    state = SmoothedGuidanceState(
+        {"hold_seconds": 1.0, "target_smoothing": {"enabled": True}}
+    )
     state.publish((100, 200, 1080, 1920), bird_count=1, observed_at=0.0)
     state.publish(None, bird_count=0, observed_at=0.2)
     reacquired = (700, 1000, 1080, 1920)
 
-    state.publish(reacquired, bird_count=1, observed_at=0.4)
+    state.publish(reacquired, bird_count=1, observed_at=1.2)
 
-    assert target(state, now=0.4) == reacquired
+    assert target(state, now=1.2) == reacquired
 
 
 def test_disabled_smoothing_preserves_raw_targets():
