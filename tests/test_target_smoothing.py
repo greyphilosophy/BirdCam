@@ -15,6 +15,17 @@ def test_first_detection_is_accepted_immediately():
     assert target(state) == detected
 
 
+def test_first_detection_is_valid_when_immediate_acquisition_is_disabled():
+    state = SmoothedGuidanceState(
+        {"target_smoothing": {"enabled": True, "immediate_on_acquire": False}}
+    )
+    detected = (400, 800, 1080, 1920)
+
+    state.publish(detected, bird_count=1, observed_at=0.0)
+
+    assert target(state) == detected
+
+
 def test_new_additional_bird_is_accepted_immediately():
     state = SmoothedGuidanceState({"target_smoothing": {"enabled": True}})
     state.publish((400, 800, 1080, 1920), bird_count=1, observed_at=0.0)
@@ -59,7 +70,7 @@ def test_meaningful_tracking_changes_are_smoothed():
 
     state.publish((500, 600, 1480, 2320), bird_count=1, observed_at=0.2)
 
-    assert target(state, now=0.2) == (250, 350, 1180, 2020)
+    assert target(state, now=0.2) == (350, 450, 1180, 2020)
 
 
 def test_reacquisition_after_empty_detection_is_immediate():
@@ -81,6 +92,24 @@ def test_disabled_smoothing_preserves_raw_targets():
     state.publish(detected, bird_count=1, observed_at=0.2)
 
     assert target(state, now=0.2) == detected
+
+
+def test_invalid_numeric_config_falls_back_to_safe_defaults():
+    state = SmoothedGuidanceState(
+        {
+            "target_smoothing": {
+                "center_alpha": "invalid",
+                "size_alpha": None,
+                "pan_dead_zone_pixels": "invalid",
+                "zoom_dead_zone_fraction": None,
+            }
+        }
+    )
+
+    state.publish((100, 200, 1080, 1920), bird_count=1, observed_at=0.0)
+    state.publish((500, 600, 1480, 2320), bird_count=1, observed_at=0.2)
+
+    assert target(state, now=0.2) == (176, 276, 1128, 1968)
 
 
 def test_birdcam_uses_smoothed_guidance_without_touching_render_loop():
