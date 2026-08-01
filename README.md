@@ -103,10 +103,9 @@ tracker:
     size_alpha: 0.12
     pan_dead_zone_pixels: 30
     zoom_dead_zone_fraction: 0.04
-    immediate_on_acquire: true
 ```
 
-The first detection, reacquisition after an empty detection, and an increased bird count are accepted immediately. Small center and size fluctuations are held inside the dead zones. Meaningful expansion is never reduced below the newest raw detection target, while safe contraction and recentering use the configured smoothing values. The existing per-frame pan and zoom limits still control what viewers see, so immediate guidance does not become an abrupt video cut.
+The first detection, a genuine reacquisition after the hold interval, and an increased bird count are always accepted immediately. Brief empty detector samples inside `tracker.hold_seconds` remain continuous tracking instead of resetting the filter. Small center and size fluctuations are held inside the dead zones. Meaningful expansion is never reduced below the newest raw detection target, while safe contraction and recentering use the configured smoothing values. The existing per-frame pan and zoom limits still control what viewers see, so immediate guidance does not become an abrupt video cut.
 
 Because this filter performs only a fixed number of scalar operations per guidance update, it should not materially affect output frame rate.
 
