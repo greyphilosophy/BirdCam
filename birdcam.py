@@ -7,6 +7,7 @@ import yaml
 import birdcam_framing as _framing
 import birdcam_legacy as _legacy
 import birdcam_optimized as _optimized
+from birdcam_target_smoothing import SmoothedGuidanceState
 from birdcam_virtual_camera import CompositeOutput, VirtualCameraOutput
 
 # Preserve the historical public geometry API while routing the optimized
@@ -27,7 +28,11 @@ _OptimizedBirdCam = BirdCam
 
 
 class BirdCam(_OptimizedBirdCam):
-    """Optimized BirdCam with optional direct virtual-camera output."""
+    """Optimized BirdCam with smoothed guidance and optional virtual output."""
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.guidance = SmoothedGuidanceState(config.get("tracker", {}))
 
     def start_streamer(self):
         super().start_streamer()
