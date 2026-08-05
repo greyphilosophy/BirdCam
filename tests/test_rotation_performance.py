@@ -11,6 +11,7 @@ from birdcam import (
     rotate_frame,
     rotated_frame_size,
 )
+from birdcam_letterbox import apply_dark_gray_letterbox
 
 
 def test_rotated_frame_size_swaps_quarter_turn_dimensions():
@@ -48,7 +49,7 @@ def test_optimized_renderer_matches_rotate_then_crop_reference():
     rotated = rotate_frame(frame, 90)
     crop = (5, 10, 40, 70)
 
-    expected = crop_and_scale(rotated, crop)
+    expected = apply_dark_gray_letterbox(crop_and_scale(rotated, crop), crop)
     actual = crop_and_scale_rotated(frame, crop, 90)
 
     assert actual.shape == expected.shape == (OUT_H, OUT_W, 3)
@@ -91,7 +92,8 @@ def test_zero_rotation_matches_existing_renderer():
     frame = np.arange(60 * 100 * 3, dtype=np.uint8).reshape(60, 100, 3)
     crop = (10, 5, 50, 50)
 
+    expected = apply_dark_gray_letterbox(crop_and_scale(frame, crop), crop)
     assert np.array_equal(
         crop_and_scale_rotated(frame, crop, 0),
-        crop_and_scale(frame, crop),
+        expected,
     )
