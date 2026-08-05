@@ -1,4 +1,4 @@
-ultralytics==8.2.0
+ultralytics==8.4.104
 opencv-python==4.10.0.84
 numpy==1.26.4
 PyYAML==6.0.1
