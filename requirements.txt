@@ -1,3 +1,14 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+# BirdCam's production Windows target uses an NVIDIA RTX GPU. Pin the CUDA
+# wheels explicitly so `pip install -r requirements.txt` cannot silently choose
+# PyTorch's CPU-only build. Non-Windows environments (including CI) use the
+# matching standard wheels.
+torch==2.11.0+cu128; sys_platform == "win32"
+torchvision==0.26.0+cu128; sys_platform == "win32"
+torch==2.11.0; sys_platform != "win32"
+torchvision==0.26.0; sys_platform != "win32"
+
 ultralytics==8.2.0
 opencv-python==4.10.0.84
 numpy==1.26.4
