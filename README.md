@@ -51,7 +51,7 @@ python -m pip install --upgrade pip
 python -m pip install --no-cache-dir -r requirements.txt
 ```
 
-`requirements.txt` pins PyTorch 2.11 and torchvision 0.26. On Windows it explicitly selects the CUDA 12.8 wheels from PyTorch's package index, preventing pip from silently installing the CPU-only build. Non-Windows environments use the matching standard wheels.
+`requirements.txt` is the production Windows/RTX requirements set. It pins PyTorch 2.11 and torchvision 0.26 to the CUDA 12.8 wheels from PyTorch's package index, preventing pip from silently installing the CPU-only build. GitHub Actions uses `requirements-ci.txt`, which selects matching CPU-only wheels and shares the remaining pins through `requirements-common.txt`.
 
 Verify the environment before launching BirdCam:
 
