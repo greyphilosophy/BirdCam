@@ -38,26 +38,55 @@ The transition between the wide idle view and portrait tracking is not a hard cu
 
 ## Setup (Guardian452 — Windows 11 + RTX 4090)
 
-### 1. Clone and Install
+Use a 64-bit Python 3.10 or 3.11 installation and a current NVIDIA display driver. Do not install BirdCam into Conda's `base` environment; use a dedicated virtual environment.
 
-```cmd
+### 1. Clone and install
+
+```powershell
 git clone https://github.com/greyphilosophy/BirdCam.git
 cd BirdCam
 python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install --no-cache-dir -r requirements.txt
 ```
+
+`requirements.txt` is the production Windows/RTX requirements set. It pins PyTorch 2.11 and torchvision 0.26 to the CUDA 12.8 wheels from PyTorch's package index, preventing pip from silently installing the CPU-only build. GitHub Actions uses `requirements-ci.txt`, which selects matching CPU-only wheels and shares the remaining pins through `requirements-common.txt`.
+
+Verify the environment before launching BirdCam:
+
+```powershell
+python -c "import sys, numpy, cv2, torch; print('Python:', sys.executable); print('NumPy:', numpy.__version__); print('OpenCV:', cv2.__version__); print('Torch:', torch.__version__); print('CUDA:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none')"
+```
+
+On the production RTX 4090 computer, the result must show:
+
+```text
+Python: ...\BirdCam\venv\Scripts\python.exe
+Torch: 2.11.0+cu128
+CUDA: True
+GPU: NVIDIA GeForce RTX 4090
+```
+
+If an existing environment reports a `+cpu` PyTorch build, reinstall from the updated requirements file:
+
+```powershell
+python -m pip uninstall -y torch torchvision torchaudio
+python -m pip install --no-cache-dir --force-reinstall -r requirements.txt
+```
+
+If compiled NumPy or PyTorch extensions are missing, delete and recreate the entire `venv` rather than repairing packages one at a time.
 
 ### 2. Download YOLOv8 Model
 
-```cmd
+```powershell
 python scripts/download_model.py
 ```
 
 ### 3. Configure
 
-```cmd
-copy config.example.yaml config.yaml
+```powershell
+Copy-Item config.example.yaml config.yaml
 ```
 
 Edit `config.yaml` with your settings:
@@ -78,7 +107,7 @@ Edit `config.yaml` with your settings:
 
 ### 4. Run
 
-```cmd
+```powershell
 python birdcam.py
 ```
 
@@ -126,7 +155,7 @@ virtual_camera:
 
 Start BirdCam normally:
 
-```cmd
+```powershell
 python birdcam.py
 ```
 
@@ -142,19 +171,19 @@ Windows camera drivers often report the requested frame rate even when they deli
 
 Run the short 4K/MJPEG-focused probe first:
 
-```cmd
+```powershell
 python scripts\camera_diagnostic.py --quick
 ```
 
 Run the complete probe matrix:
 
-```cmd
+```powershell
 python scripts\camera_diagnostic.py
 ```
 
 Probe one exact request for a longer interval:
 
-```cmd
+```powershell
 python scripts\camera_diagnostic.py --backend dshow --duration 10 --mode MJPG:3840x2160:60
 ```
 
