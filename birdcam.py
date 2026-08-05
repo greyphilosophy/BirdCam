@@ -7,6 +7,7 @@ import yaml
 import birdcam_framing as _framing
 import birdcam_legacy as _legacy
 import birdcam_optimized as _optimized
+from birdcam_letterbox import apply_dark_gray_letterbox
 from birdcam_target_smoothing import SmoothedGuidanceState
 from birdcam_virtual_camera import CompositeOutput, VirtualCameraOutput
 
@@ -19,6 +20,18 @@ _legacy.compute_bird_crop = _framing.compute_bird_crop
 _legacy.advance_crop = _framing.advance_crop
 _optimized.compute_bird_crop = _framing.compute_bird_crop
 _optimized.advance_crop = _framing.advance_crop
+
+# Preserve real black pixels in the camera image while recoloring only the bars
+# whose exact bounds are known from the crop geometry.
+_optimized_crop_and_scale_rotated = _optimized.crop_and_scale_rotated
+
+
+def _crop_and_scale_with_dark_gray_letterbox(frame, crop, degrees):
+    output = _optimized_crop_and_scale_rotated(frame, crop, degrees)
+    return apply_dark_gray_letterbox(output, crop)
+
+
+_optimized.crop_and_scale_rotated = _crop_and_scale_with_dark_gray_letterbox
 
 from birdcam_optimized import *  # noqa: F401,F403,E402
 
