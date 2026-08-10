@@ -1,4 +1,4 @@
-"""Low-cost smoothing for detector-generated BirdCam crop targets."""
+"""Low-cost filtering for detector-generated BirdCam crop targets."""
 
 import birdcam_legacy as legacy
 
@@ -17,28 +17,62 @@ def _nonnegative_float(value, default):
         return default
 
 
+def _positive_int(value, default):
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
 class SmoothedGuidanceState(legacy.GuidanceState):
-    """Filter detector jitter while accepting newly appearing birds immediately."""
+    """Reject unstable target jumps, then smooth accepted detector guidance."""
 
     def __init__(self, tracker_config=None):
         super().__init__()
         tracker_config = tracker_config or {}
-        config = tracker_config.get("target_smoothing", {}) or {}
-        self._smoothing_enabled = bool(config.get("enabled", True))
-        self._center_alpha = _bounded_alpha(config.get("center_alpha", 0.30), 0.30)
-        self._size_alpha = _bounded_alpha(config.get("size_alpha", 0.12), 0.12)
+        smoothing = tracker_config.get("target_smoothing", {}) or {}
+        confirmation = tracker_config.get("target_confirmation", {}) or {}
+
+        self._smoothing_enabled = bool(smoothing.get("enabled", True))
+        self._center_alpha = _bounded_alpha(smoothing.get("center_alpha", 0.30), 0.30)
+        self._size_alpha = _bounded_alpha(smoothing.get("size_alpha", 0.12), 0.12)
         self._pan_dead_zone = _nonnegative_float(
-            config.get("pan_dead_zone_pixels", 30),
+            smoothing.get("pan_dead_zone_pixels", 30),
             30.0,
         )
         self._zoom_dead_zone = _nonnegative_float(
-            config.get("zoom_dead_zone_fraction", 0.04),
+            smoothing.get("zoom_dead_zone_fraction", 0.04),
             0.04,
         )
         self._hold_seconds = _nonnegative_float(
             tracker_config.get("hold_seconds", 1.0),
             1.0,
         )
+
+        self._confirmation_enabled = bool(confirmation.get("enabled", True))
+        self._required_samples = _positive_int(
+            confirmation.get("required_samples", 2),
+            2,
+        )
+        self._large_center_distance = _nonnegative_float(
+            confirmation.get("large_center_distance_pixels", 80),
+            80.0,
+        )
+        self._large_size_change = _nonnegative_float(
+            confirmation.get("large_size_change_fraction", 0.08),
+            0.08,
+        )
+        self._agreement_center_distance = _nonnegative_float(
+            confirmation.get("agreement_center_distance_pixels", 180),
+            180.0,
+        )
+        self._agreement_size_change = _nonnegative_float(
+            confirmation.get("agreement_size_change_fraction", 0.20),
+            0.20,
+        )
+        self._pending_target = None
+        self._pending_bird_count = 0
+        self._pending_samples = 0
 
     @staticmethod
     def _center(crop):
@@ -53,6 +87,18 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             max(1, int(round(width))),
             max(1, int(round(height))),
         )
+
+    @classmethod
+    def _center_distance(cls, first, second):
+        first_x, first_y = cls._center(first)
+        second_x, second_y = cls._center(second)
+        return max(abs(second_x - first_x), abs(second_y - first_y))
+
+    @staticmethod
+    def _size_change(first, second):
+        width_change = abs(second[2] - first[2]) / max(first[2], 1)
+        height_change = abs(second[3] - first[3]) / max(first[3], 1)
+        return max(width_change, height_change)
 
     @classmethod
     def _ensure_contains(cls, crop, required):
@@ -75,13 +121,8 @@ class SmoothedGuidanceState(legacy.GuidanceState):
         previous_w, previous_h = previous[2], previous[3]
         target_w, target_h = target[2], target[3]
 
-        pan_is_jitter = (
-            max(abs(target_x - previous_x), abs(target_y - previous_y))
-            <= self._pan_dead_zone
-        )
-        width_change = abs(target_w - previous_w) / max(previous_w, 1)
-        height_change = abs(target_h - previous_h) / max(previous_h, 1)
-        size_is_jitter = max(width_change, height_change) <= self._zoom_dead_zone
+        pan_is_jitter = self._center_distance(previous, target) <= self._pan_dead_zone
+        size_is_jitter = self._size_change(previous, target) <= self._zoom_dead_zone
 
         if pan_is_jitter and size_is_jitter:
             return previous
@@ -101,26 +142,83 @@ class SmoothedGuidanceState(legacy.GuidanceState):
         smoothed = self._crop_from_center(center_x, center_y, width, height)
         return self._ensure_contains(smoothed, target)
 
+    def _clear_pending(self):
+        self._pending_target = None
+        self._pending_bird_count = 0
+        self._pending_samples = 0
+
+    def _requires_confirmation(self, target, bird_count):
+        if not self._confirmation_enabled or self._required_samples <= 1:
+            return False
+        if self._target is None:
+            return True
+        if bird_count != self._bird_count:
+            return True
+        return (
+            self._center_distance(self._target, target) > self._large_center_distance
+            or self._size_change(self._target, target) > self._large_size_change
+        )
+
+    def _candidate_agrees(self, target, bird_count):
+        return (
+            self._pending_target is not None
+            and bird_count == self._pending_bird_count
+            and self._center_distance(self._pending_target, target)
+            <= self._agreement_center_distance
+            and self._size_change(self._pending_target, target)
+            <= self._agreement_size_change
+        )
+
+    def _confirm_or_hold(self, target, bird_count):
+        """Return True only after enough consecutive suspicious samples agree."""
+        if not self._requires_confirmation(target, bird_count):
+            self._clear_pending()
+            return True
+
+        if self._candidate_agrees(target, bird_count):
+            # Keep the first candidate as the anchor so a longer confirmation
+            # sequence cannot drift across the frame one small step at a time.
+            self._pending_samples += 1
+        else:
+            self._pending_target = target
+            self._pending_bird_count = bird_count
+            self._pending_samples = 1
+
+        if self._pending_samples < self._required_samples:
+            return False
+
+        self._clear_pending()
+        return True
+
     def publish(self, target, bird_count, observed_at, published_at=None):
         with self._lock:
             previous_count = self._bird_count
             previous_target = self._target
             last_birds_at = self._last_birds_at
-            self._bird_count = bird_count
             self._updated_at = observed_at
+
             if not bird_count or target is None:
+                self._bird_count = bird_count
+                self._clear_pending()
                 return
 
-            first_target = previous_target is None
+            # A real bird observation keeps the current framing alive even while
+            # a suspicious replacement target waits for corroboration.
+            self._last_birds_at = observed_at
+            if not self._confirm_or_hold(target, bird_count):
+                return
+
             recently_tracking = (
                 last_birds_at is not None
                 and max(0.0, observed_at - last_birds_at) <= self._hold_seconds
             )
+            first_target = previous_target is None
             newly_added_bird = bird_count > previous_count and not (
                 previous_count == 0 and recently_tracking
             )
+
+            self._bird_count = bird_count
             if not self._smoothing_enabled or first_target or newly_added_bird:
                 self._target = target
             else:
                 self._target = self._smooth_target(previous_target, target)
-            self._last_birds_at = observed_at

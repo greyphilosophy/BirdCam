@@ -12,7 +12,9 @@ BirdCam deliberately separates the audience-facing video path from the slower AI
 ELP camera at 4K60
         ↓
 latest-frame slot (old frames are discarded)
-        ├── guidance worker samples newest frame at up to 5 fps
+        ├── guidance worker samples newest frame at up to 10 fps
+        │       ↓
+        │   suspicious-change confirmation
         │       ↓
         │   dead-zone and target smoothing
         │       ↓
@@ -27,14 +29,15 @@ latest-frame slot (old frames are discarded)
 
 The renderer never waits for YOLO. It keeps using the last known target while guidance processes a newer frame. Crop position and dimensions advance every output frame using time-based speed limits, so a slow or irregular detector cannot create camera jumps or sudden zooms.
 
-- **No birds yet:** Shows the complete 16:9 camera frame, centered in the vertical stream with black bars above and below.
-- **Birds appear:** The first target is accepted immediately; the renderer smoothly approaches it.
+- **No birds yet:** Shows the complete 16:9 camera frame, centered in the vertical stream with dark-gray bars above and below.
+- **Birds appear:** A new target must be seen consistently before the camera begins reframing.
 - **Birds remain:** Small detector-box fluctuations are ignored and safe contraction/recentering is smoothed.
-- **Multiple birds:** A newly increased bird count is accepted immediately, and meaningful target expansion always remains large enough to contain the latest detected group.
+- **Large target changes:** Large pan/zoom changes must agree across consecutive guidance samples before they are accepted.
+- **Multiple birds:** Bird-count changes are also confirmed before they can expand or move the target.
 - **Birds leave:** The previous target is held briefly, then the view opens to the portrait overview and finally the full letterboxed idle view.
 - **Guidance falls behind:** Stale input frames are discarded; only the newest frame is analyzed.
 
-The transition between the wide idle view and portrait tracking is not a hard cut. BirdCam changes the crop width, height, and center using the same configured speed limits used for bird tracking. The black bars therefore grow or shrink gradually as the horizontal field of view changes. Transitions between two portrait tracking crops remain locked to the portrait aspect ratio, so ordinary bird-following zooms do not introduce black bars.
+The transition between the wide idle view and portrait tracking is not a hard cut. BirdCam changes the crop width, height, and center using the same configured speed limits used for bird tracking. The bars therefore grow or shrink gradually as the horizontal field of view changes. Transitions between two portrait tracking crops remain locked to the portrait aspect ratio, so ordinary bird-following zooms do not introduce bars.
 
 ## Setup (Guardian452 — Windows 11 + RTX 4090)
 
@@ -94,9 +97,10 @@ Edit `config.yaml` with your settings:
 - `camera.device`: Camera device index, usually 0 or 1
 - `camera.backend`: Windows defaults to Media Foundation through `auto`
 - `camera.rotation_degrees`: Source-frame rotation applied before detection and streaming
-- `detector.max_fps`: Maximum AI guidance rate; 5 fps is the default
+- `detector.max_fps`: Maximum AI guidance sampling rate; 10 fps is the example default
 - `tracker.max_zoom_fraction_per_second`: Maximum crop-size change per second
 - `tracker.max_pan_fraction_per_second`: Maximum crop-center movement per second
+- `tracker.target_confirmation`: Consecutive-sample confirmation for suspicious target changes
 - `tracker.target_smoothing`: Detector-target dead zones and low-frequency smoothing
 - `idle_view.enabled`: Enable or disable the wide letterboxed waiting view
 - `idle_view.delay_seconds`: Time since the last bird before targeting the full-frame idle view
@@ -118,14 +122,21 @@ clockwise preview rotation would rotate the already-corrected image a second
 time. Preview rotation remains available for unusual display arrangements, but
 it is independent of camera/source rotation.
 
-## Tracking smoothing
+## Tracking confirmation and smoothing
 
-BirdCam filters guidance targets only when a new detector result arrives, normally at up to `detector.max_fps` (5 fps by default). The 60 fps capture, render, RTMP, and virtual-camera paths are unchanged.
+BirdCam filters guidance only when a new detector result arrives. Suspicious changes are rejected until consecutive samples agree; ordinary small movement continues through immediately. This keeps one confused YOLO frame from yanking the camera while preserving responsive tracking.
 
-The default configuration is:
+The example configuration is:
 
 ```yaml
 tracker:
+  target_confirmation:
+    enabled: true
+    required_samples: 2
+    large_center_distance_pixels: 80
+    large_size_change_fraction: 0.08
+    agreement_center_distance_pixels: 180
+    agreement_size_change_fraction: 0.20
   target_smoothing:
     enabled: true
     center_alpha: 0.30
@@ -134,9 +145,9 @@ tracker:
     zoom_dead_zone_fraction: 0.04
 ```
 
-The first detection, a genuine reacquisition after the hold interval, and an increased bird count are always accepted immediately. Brief empty detector samples inside `tracker.hold_seconds` remain continuous tracking instead of resetting the filter. Small center and size fluctuations are held inside the dead zones. Meaningful expansion is never reduced below the newest raw detection target, while safe contraction and recentering use the configured smoothing values. The existing per-frame pan and zoom limits still control what viewers see, so immediate guidance does not become an abrupt video cut.
+A first acquisition, a large pan or zoom change, and a bird-count change all require two agreeing samples. If the next sample contradicts the candidate, the pending change is discarded and confirmation starts over. For `required_samples` values above two, every sample must remain consistent with the first candidate in that confirmation sequence, preventing cumulative drift. Small continuous changes do not wait for confirmation. Once a target is accepted, the existing dead zones, smoothing, and per-frame pan/zoom velocity limits still control presentation.
 
-Because this filter performs only a fixed number of scalar operations per guidance update, it should not materially affect output frame rate.
+At a 10 fps guidance rate, two-sample confirmation normally adds about one guidance interval of latency while preventing isolated detector mistakes from becoming visible camera motion. Real bird observations continue refreshing the tracking hold timer even while a replacement target is waiting for confirmation. Confirmation and smoothing run only on guidance updates, not in the audience-facing render loop.
 
 ## Direct virtual-camera output
 
