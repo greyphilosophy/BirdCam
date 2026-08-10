@@ -100,6 +100,39 @@ def test_full_frame_between_large_candidates_prevents_reframe():
     assert landscape_target(state, now=0.4) == full
 
 
+def test_pending_changes_keep_tracking_hold_alive():
+    state = SmoothedGuidanceState(
+        {
+            "hold_seconds": 0.5,
+            "target_confirmation": {
+                "enabled": True,
+                "required_samples": 3,
+                "agreement_center_distance_pixels": 20,
+            },
+            "target_smoothing": {"enabled": False},
+        }
+    )
+    stable = (0, 0, 3840, 2160)
+    state.publish(stable, bird_count=1, observed_at=0.0)
+    state.publish(stable, bird_count=1, observed_at=0.1)
+    state.publish(stable, bird_count=1, observed_at=0.2)
+    assert landscape_target(state, now=0.2) == stable
+
+    state.publish((800, 10, 3013, 2150), bird_count=1, observed_at=0.6)
+    state.publish((300, 20, 3300, 2140), bird_count=1, observed_at=1.0)
+
+    current, mode = state.view_for(
+        3840,
+        2160,
+        now=1.1,
+        hold_seconds=0.5,
+        idle_enabled=True,
+        idle_after_seconds=0.5,
+    )
+    assert current == stable
+    assert mode == "tracking"
+
+
 def test_small_continuous_change_does_not_wait_for_confirmation():
     state = SmoothedGuidanceState(
         {
