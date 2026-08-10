@@ -15,13 +15,20 @@ detector:
   conf_thresh: 0.45
   imgsz: 1280           # Guidance resolution, independent of output frame rate
   device: 0             # CUDA device index
-  max_fps: 5            # Guidance may run slowly; only the newest frame is sampled
+  max_fps: 10           # Faster sampling keeps two-sample confirmation responsive
 
 tracker:
   padding: 200
   hold_seconds: 1.0     # Keep the last bird framing briefly after detection disappears
   max_zoom_fraction_per_second: 0.35  # Limit crop-size change to 35%/second
   max_pan_fraction_per_second: 0.25   # Limit center movement to 25% of frame/second
+  target_confirmation:
+    enabled: true
+    required_samples: 2                 # Suspicious changes must agree twice
+    large_center_distance_pixels: 80    # Confirm larger target-center jumps
+    large_size_change_fraction: 0.08    # Confirm crop size changes over 8%
+    agreement_center_distance_pixels: 180 # Consecutive candidates may move somewhat
+    agreement_size_change_fraction: 0.20  # Consecutive candidates may resize somewhat
   target_smoothing:
     enabled: true
     center_alpha: 0.30           # Follow 30% of meaningful center movement per detection
