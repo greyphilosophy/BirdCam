@@ -133,6 +133,37 @@ def test_pending_changes_keep_tracking_hold_alive():
     assert mode == "tracking"
 
 
+def test_required_samples_anchor_to_first_candidate_in_sequence():
+    state = SmoothedGuidanceState(
+        {
+            "target_confirmation": {
+                "enabled": True,
+                "required_samples": 3,
+                "large_center_distance_pixels": 20,
+                "agreement_center_distance_pixels": 100,
+                "agreement_size_change_fraction": 0.20,
+            },
+            "target_smoothing": {"enabled": False},
+        }
+    )
+    stable = (0, 0, 3840, 2160)
+    state.publish(stable, bird_count=1, observed_at=0.0)
+    state.publish(stable, bird_count=1, observed_at=0.1)
+    state.publish(stable, bird_count=1, observed_at=0.2)
+    assert landscape_target(state, now=0.2) == stable
+
+    first = (500, 0, 3300, 2160)
+    second = (580, 0, 3260, 2160)
+    drifted = (660, 0, 3220, 2160)
+    state.publish(first, bird_count=1, observed_at=0.3)
+    state.publish(second, bird_count=1, observed_at=0.4)
+    state.publish(drifted, bird_count=1, observed_at=0.5)
+
+    # second is close to first, and drifted is close to second, but drifted is
+    # too far from the first candidate. It must restart instead of confirming.
+    assert landscape_target(state, now=0.5) == stable
+
+
 def test_small_continuous_change_does_not_wait_for_confirmation():
     state = SmoothedGuidanceState(
         {
