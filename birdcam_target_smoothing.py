@@ -176,8 +176,9 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             return True
 
         if self._candidate_agrees(target, bird_count):
+            # Keep the first candidate as the anchor so a longer confirmation
+            # sequence cannot drift across the frame one small step at a time.
             self._pending_samples += 1
-            self._pending_target = target
         else:
             self._pending_target = target
             self._pending_bird_count = bird_count
