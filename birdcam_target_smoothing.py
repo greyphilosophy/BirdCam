@@ -202,12 +202,18 @@ class SmoothedGuidanceState(legacy.GuidanceState):
                 self._clear_pending()
                 return
 
-            # A real bird observation keeps the current framing alive even while
-            # a suspicious replacement target waits for corroboration.
-            self._last_birds_at = observed_at
             if not self._confirm_or_hold(target, bird_count):
+                # A pending replacement may extend an actively observed bird's
+                # hold, but it must not resurrect tracking after an empty result.
+                if (
+                    previous_count > 0
+                    and last_birds_at is not None
+                    and max(0.0, observed_at - last_birds_at) <= self._hold_seconds
+                ):
+                    self._last_birds_at = observed_at
                 return
 
+            self._last_birds_at = observed_at
             recently_tracking = (
                 last_birds_at is not None
                 and max(0.0, observed_at - last_birds_at) <= self._hold_seconds
