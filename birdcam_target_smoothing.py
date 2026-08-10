@@ -201,6 +201,9 @@ class SmoothedGuidanceState(legacy.GuidanceState):
                 self._clear_pending()
                 return
 
+            # A real bird observation keeps the current framing alive even while
+            # a suspicious replacement target waits for corroboration.
+            self._last_birds_at = observed_at
             if not self._confirm_or_hold(target, bird_count):
                 return
 
@@ -218,4 +221,3 @@ class SmoothedGuidanceState(legacy.GuidanceState):
                 self._target = target
             else:
                 self._target = self._smooth_target(previous_target, target)
-            self._last_birds_at = observed_at
