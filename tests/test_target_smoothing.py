@@ -133,6 +133,34 @@ def test_pending_changes_keep_tracking_hold_alive():
     assert mode == "tracking"
 
 
+def test_unconfirmed_detection_does_not_extend_hold_after_empty_result():
+    state = SmoothedGuidanceState(
+        {
+            "hold_seconds": 0.5,
+            "target_confirmation": {"enabled": True, "required_samples": 2},
+            "target_smoothing": {"enabled": False},
+        }
+    )
+    stable = (0, 0, 3840, 2160)
+    state.publish(stable, bird_count=1, observed_at=0.0)
+    state.publish(stable, bird_count=1, observed_at=0.1)
+    state.publish(None, bird_count=0, observed_at=0.2)
+
+    candidate = (800, 10, 3013, 2150)
+    state.publish(candidate, bird_count=1, observed_at=0.4)
+
+    current, mode = state.view_for(
+        3840,
+        2160,
+        now=0.65,
+        hold_seconds=0.5,
+        idle_enabled=True,
+        idle_after_seconds=0.5,
+    )
+    assert current == (0, 0, 3840, 2160)
+    assert mode == "idle"
+
+
 def test_required_samples_anchor_to_first_candidate_in_sequence():
     state = SmoothedGuidanceState(
         {
