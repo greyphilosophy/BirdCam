@@ -6,6 +6,10 @@ def target(state, now=0.0):
     return state.target_for(2160, 3840, now, hold_seconds=1.0)
 
 
+def landscape_target(state, now=0.0):
+    return state.target_for(3840, 2160, now, hold_seconds=1.0)
+
+
 def contains(crop, required):
     return (
         crop[0] <= required[0]
@@ -64,15 +68,15 @@ def test_large_tracking_jump_requires_confirmation():
     original = (0, 0, 3840, 2160)
     state.publish(original, bird_count=1, observed_at=0.0)
     state.publish(original, bird_count=1, observed_at=0.1)
-    assert target(state, now=0.1) == original
+    assert landscape_target(state, now=0.1) == original
 
     proposed = (800, 10, 3013, 2150)
     state.publish(proposed, bird_count=1, observed_at=0.2)
-    assert target(state, now=0.2) == original
+    assert landscape_target(state, now=0.2) == original
 
     confirmed = (760, 20, 3050, 2140)
     state.publish(confirmed, bird_count=1, observed_at=0.3)
-    assert target(state, now=0.3) == confirmed
+    assert landscape_target(state, now=0.3) == confirmed
 
 
 def test_full_frame_between_large_candidates_prevents_reframe():
@@ -87,13 +91,13 @@ def test_full_frame_between_large_candidates_prevents_reframe():
     state.publish(full, bird_count=1, observed_at=0.1)
 
     state.publish((800, 10, 3013, 2150), bird_count=1, observed_at=0.2)
-    assert target(state, now=0.2) == full
+    assert landscape_target(state, now=0.2) == full
 
     state.publish(full, bird_count=1, observed_at=0.3)
-    assert target(state, now=0.3) == full
+    assert landscape_target(state, now=0.3) == full
 
     state.publish((522, 84, 3318, 2076), bird_count=1, observed_at=0.4)
-    assert target(state, now=0.4) == full
+    assert landscape_target(state, now=0.4) == full
 
 
 def test_small_continuous_change_does_not_wait_for_confirmation():
@@ -114,7 +118,7 @@ def test_small_continuous_change_does_not_wait_for_confirmation():
     nearby = (1030, 210, 1220, 1910)
     state.publish(nearby, bird_count=1, observed_at=0.2)
 
-    assert target(state, now=0.2) == nearby
+    assert landscape_target(state, now=0.2) == nearby
 
 
 def test_new_additional_bird_requires_confirmation():
