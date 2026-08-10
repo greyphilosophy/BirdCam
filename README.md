@@ -23,7 +23,7 @@ latest-frame slot (old frames are discarded)
         └── 60 fps renderer applies current crop
                 ↓
             one downscale to 1080×1920
-                ├── FFmpeg / RTMP
+                ├── FFmpeg / TikTok RTMP
                 └── optional direct virtual camera
 ```
 
@@ -54,7 +54,7 @@ python -m pip install --upgrade pip
 python -m pip install --no-cache-dir -r requirements.txt
 ```
 
-`requirements.txt` is the production Windows/RTX requirements set. It pins CUDA-enabled PyTorch wheels explicitly so pip does not silently install a CPU-only build. GitHub Actions uses `requirements-ci.txt`, which selects matching CPU-only wheels and shares the remaining pins through `requirements-common.txt`.
+`requirements.txt` is the production Windows/RTX requirements set. It pins PyTorch 2.11 and torchvision 0.26 to the CUDA 12.8 wheels from PyTorch's package index, preventing pip from silently installing the CPU-only build. GitHub Actions uses `requirements-ci.txt`, which selects matching CPU-only wheels and shares the remaining pins through `requirements-common.txt`.
 
 Verify the environment before launching BirdCam:
 
@@ -62,7 +62,21 @@ Verify the environment before launching BirdCam:
 python -c "import sys, numpy, cv2, torch; print('Python:', sys.executable); print('NumPy:', numpy.__version__); print('OpenCV:', cv2.__version__); print('Torch:', torch.__version__); print('CUDA:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none')"
 ```
 
-On the production RTX 4090 computer, CUDA must report `True` and the GPU must be `NVIDIA GeForce RTX 4090`.
+On the production RTX 4090 computer, the result must show:
+
+```text
+Python: ...\BirdCam\venv\Scripts\python.exe
+Torch: 2.11.0+cu128
+CUDA: True
+GPU: NVIDIA GeForce RTX 4090
+```
+
+If an existing environment reports a `+cpu` PyTorch build, reinstall from the updated requirements file:
+
+```powershell
+python -m pip uninstall -y torch torchvision torchaudio
+python -m pip install --no-cache-dir --force-reinstall -r requirements.txt
+```
 
 If compiled NumPy or PyTorch extensions are missing, delete and recreate the entire `venv` rather than repairing packages one at a time.
 
@@ -92,7 +106,7 @@ Edit `config.yaml` with your settings:
 - `idle_view.delay_seconds`: Time since the last bird before targeting the full-frame idle view
 - `debug.preview_rotation`: Optional additional rotation applied only to the local preview
 - `debug.preview_width` / `preview_height`: Size of the resizable desktop preview window
-- `stream.rtmp_url`: Optional RTMP destination
+- `stream.rtmp_url`: TikTok RTMP URL and stream key
 - `virtual_camera.enabled`: Publish the finished BirdCam frame as a webcam device
 
 ### 4. Run
@@ -101,7 +115,12 @@ Edit `config.yaml` with your settings:
 python birdcam.py
 ```
 
-For a sideways camera mounting, use `camera.rotation_degrees: 90` and `debug.preview_rotation: none`. Source rotation already makes detection, the 1080×1920 stream, and the portrait debug preview upright.
+For the current sideways camera mounting, use `camera.rotation_degrees: 90` and
+`debug.preview_rotation: none`. Source rotation already makes detection, the
+1080×1920 stream, and the portrait debug preview upright. Applying another
+clockwise preview rotation would rotate the already-corrected image a second
+time. Preview rotation remains available for unusual display arrangements, but
+it is independent of camera/source rotation.
 
 ## Tracking confirmation and smoothing
 
@@ -126,9 +145,9 @@ tracker:
     zoom_dead_zone_fraction: 0.04
 ```
 
-A first acquisition, a large pan or zoom change, and a bird-count change all require two agreeing samples. If the next sample contradicts the candidate, the pending change is discarded and confirmation starts over. Small continuous changes do not wait for confirmation. Once a target is accepted, the existing dead zones, smoothing, and per-frame pan/zoom velocity limits still control presentation.
+A first acquisition, a large pan or zoom change, and a bird-count change all require two agreeing samples. If the next sample contradicts the candidate, the pending change is discarded and confirmation starts over. For `required_samples` values above two, every sample must remain consistent with the first candidate in that confirmation sequence, preventing cumulative drift. Small continuous changes do not wait for confirmation. Once a target is accepted, the existing dead zones, smoothing, and per-frame pan/zoom velocity limits still control presentation.
 
-At a 10 fps guidance rate, two-sample confirmation normally adds about one guidance interval of latency while preventing isolated detector mistakes from becoming visible camera motion. Confirmation and smoothing run only on guidance updates, not in the audience-facing render loop.
+At a 10 fps guidance rate, two-sample confirmation normally adds about one guidance interval of latency while preventing isolated detector mistakes from becoming visible camera motion. Real bird observations continue refreshing the tracking hold timer even while a replacement target is waiting for confirmation. Confirmation and smoothing run only on guidance updates, not in the audience-facing render loop.
 
 ## Direct virtual-camera output
 
@@ -153,7 +172,9 @@ python birdcam.py
 
 Then choose **OBS Virtual Camera** in the receiving application. BirdCam sends the same rendered frames used by the RTMP output, so both outputs may run at the same time.
 
-For virtual-camera-only operation, leave `stream.rtmp_url` empty or remove it from your local configuration. The virtual camera still uses `stream.fps` as its requested cadence.
+For virtual-camera-only operation, leave `stream.rtmp_url` empty or remove it from your local configuration. The virtual camera will still run at `stream.fps`, which defaults to 60.
+
+If startup reports that no virtual camera is available, confirm that the OBS Virtual Camera driver is installed and that another application is not exclusively holding the device.
 
 ## Camera diagnostics
 
@@ -177,16 +198,24 @@ Probe one exact request for a longer interval:
 python scripts\camera_diagnostic.py --backend dshow --duration 10 --mode MJPG:3840x2160:60
 ```
 
-Each result shows requested and negotiated format, actual delivered FPS, frame intervals, failed reads, and silent fallbacks.
+Each result shows:
+
+- requested pixel format, resolution, and frame rate
+- negotiated values reported by the driver
+- actual delivered FPS measured from successful reads
+- median and 95th-percentile frame intervals
+- failed reads and silent format/resolution fallbacks
+
+OpenCV does not provide reliable UVC capability enumeration on Windows, so this script probes a practical matrix rather than claiming to list every firmware-supported mode.
 
 ## Hardware
 
 - **Camera:** ELP High Speed 4K 60FPS USB Camera (IMX678 sensor)
 - **GPU:** NVIDIA RTX 4090 for YOLOv8 and NVENC
-- **Output:** 1080×1920 portrait video
+- **Output:** 1080×1920 at 60 fps for TikTok
 
 ## Performance Philosophy
 
-BirdCam does not run AI over every 4K input frame. The 4K stream is used as a continuously refreshed source image. Each output tick crops the newest available source frame and downsizes only that region to the vertical output. Guidance can run independently without reducing the requested output cadence.
+BirdCam does not run AI over every 4K input frame. The 4K stream is used as a continuously refreshed source image. Each output tick crops the newest available source frame and downsizes only that region to the vertical output. Guidance can run at a few detections per second without reducing output frame rate.
 
 The renderer caches the most recent finished frame when neither the source frame nor crop has changed. Debug logs report audience-facing output FPS, measured capture FPS, resize cost, current view mode, and guidance age separately.
