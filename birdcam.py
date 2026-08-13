@@ -8,7 +8,7 @@ import birdcam_framing as _framing
 import birdcam_legacy as _legacy
 import birdcam_optimized as _optimized
 from birdcam_letterbox import apply_dark_gray_letterbox
-from birdcam_target_smoothing import SmoothedGuidanceState
+from birdcam_target_smoothing import SmoothedGuidanceState as _SmoothedGuidanceState
 from birdcam_virtual_camera import CompositeOutput, VirtualCameraOutput
 
 # Preserve the historical public geometry API while routing the optimized
@@ -38,6 +38,23 @@ from birdcam_optimized import *  # noqa: F401,F403,E402
 compute_bird_crop = _public_compute_bird_crop
 advance_crop = _public_advance_crop
 _OptimizedBirdCam = BirdCam
+
+
+class SmoothedGuidanceState(_SmoothedGuidanceState):
+    """Smoothed framing state whose status reports the latest raw detection."""
+
+    def __init__(self, tracker_config=None):
+        super().__init__(tracker_config)
+        self._observed_bird_count = 0
+
+    def publish(self, target, bird_count, observed_at, published_at=None):
+        super().publish(target, bird_count, observed_at, published_at=published_at)
+        with self._lock:
+            self._observed_bird_count = bird_count
+
+    def status(self):
+        with self._lock:
+            return self._observed_bird_count, self._updated_at
 
 
 class BirdCam(_OptimizedBirdCam):
