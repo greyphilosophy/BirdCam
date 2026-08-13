@@ -28,21 +28,23 @@ def test_padding_defines_edge_risk_band():
     assert _bird_near_frame_edge([(1000, 1800, 1300, 2050)], frame_w, frame_h, padding)
 
 
-def test_edge_track_survives_short_detector_flicker():
+def test_edge_track_survives_slow_detector_flicker_until_loss_confirms():
     state = make_state()
     crop = (0, 200, 1080, 1920)
     acquire(state, crop, edge_risk=True)
 
-    state.publish(None, bird_count=0, observed_at=0.2)
-    state.publish(None, bird_count=0, observed_at=0.3)
-    state.publish(None, bird_count=0, observed_at=0.4)
+    # Space misses far enough apart that ordinary hold_seconds would expire.
+    # Edge hysteresis refreshes the hold until the fourth consecutive miss.
+    state.publish(None, bird_count=0, observed_at=0.7)
+    state.publish(None, bird_count=0, observed_at=1.3)
+    state.publish(None, bird_count=0, observed_at=1.9)
 
-    target, mode = state.view_for(3840, 2160, 0.41, 1.0, idle_enabled=True, idle_after_seconds=3.0)
+    target, mode = state.view_for(3840, 2160, 1.95, 1.0, idle_enabled=True, idle_after_seconds=3.0)
     assert target == crop
     assert mode == "tracking"
 
-    state.publish(None, bird_count=0, observed_at=0.5)
-    target, mode = state.view_for(3840, 2160, 0.51, 1.0, idle_enabled=True, idle_after_seconds=3.0)
+    state.publish(None, bird_count=0, observed_at=2.5)
+    target, mode = state.view_for(3840, 2160, 2.51, 1.0, idle_enabled=True, idle_after_seconds=3.0)
     assert target == (0, 0, 3840, 2160)
     assert mode == "idle"
 
