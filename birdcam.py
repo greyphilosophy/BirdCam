@@ -1,6 +1,7 @@
 """Compatibility entry point for the optimized BirdCam pipeline."""
 
 import sys
+import time
 
 import yaml
 
@@ -37,20 +38,131 @@ from birdcam_optimized import *  # noqa: F401,F403,E402
 
 compute_bird_crop = _public_compute_bird_crop
 advance_crop = _public_advance_crop
+
+
+def _bird_near_frame_edge(birds, frame_w, frame_h, padding):
+    """Return whether any detected bird lies inside the padding-width edge band."""
+    margin = max(0, int(padding))
+    if margin <= 0:
+        return False
+    right_limit = max(0, frame_w - margin)
+    bottom_limit = max(0, frame_h - margin)
+    return any(
+        x1 <= margin
+        or y1 <= margin
+        or x2 >= right_limit
+        or y2 >= bottom_limit
+        for x1, y1, x2, y2 in birds
+    )
+
+
+class EdgeAwareGuidanceWorker(_optimized.GuidanceWorker):
+    """Publish whether the current bird observation is vulnerable to edge flicker."""
+
+    def run(self):
+        detector = self.config["detector"]
+        tracker = self.config["tracker"]
+        try:
+            _legacy.logger.info("Loading YOLO guidance model: %s", detector["model_path"])
+            model = _legacy.YOLO(detector["model_path"])
+            sample_period = 1.0 / max(
+                0.1,
+                float(detector.get("max_fps", 5.0)),
+            )
+            sequence = 0
+            next_sample = 0.0
+            while not self.stop_event.is_set():
+                snapshot = self.latest_frame.wait_for_newer(
+                    sequence,
+                    timeout=0.25,
+                )
+                if snapshot is None:
+                    continue
+                sequence = snapshot.sequence
+                if time.monotonic() < next_sample:
+                    continue
+
+                guidance_frame = _legacy.rotate_frame(
+                    snapshot.frame,
+                    self.rotation_degrees,
+                )
+                birds = _legacy.detect_birds(
+                    model,
+                    guidance_frame,
+                    detector["conf_thresh"],
+                    detector.get("imgsz", 1280),
+                    detector.get("device", 0),
+                )
+                frame_h, frame_w = guidance_frame.shape[:2]
+                if birds and hasattr(self.guidance, "set_edge_risk"):
+                    self.guidance.set_edge_risk(
+                        _bird_near_frame_edge(
+                            birds,
+                            frame_w,
+                            frame_h,
+                            tracker.get("padding", 0),
+                        )
+                    )
+                self.guidance.publish(
+                    _legacy.compute_bird_crop(
+                        birds,
+                        frame_w,
+                        frame_h,
+                        tracker["padding"],
+                    ),
+                    len(birds),
+                    snapshot.captured_at,
+                    published_at=time.monotonic(),
+                )
+                next_sample = time.monotonic() + sample_period
+        except Exception as exc:
+            self.error = exc
+            _legacy.logger.exception("Guidance worker stopped")
+            self.stop_event.set()
+
+
+# BirdCam's optimized run loop resolves GuidanceWorker from its module globals at
+# runtime, so swap in the edge-aware worker without duplicating the render loop.
+_optimized.GuidanceWorker = EdgeAwareGuidanceWorker
 _OptimizedBirdCam = BirdCam
 
 
 class SmoothedGuidanceState(_SmoothedGuidanceState):
-    """Smoothed framing state whose status reports the latest raw detection."""
+    """Smoothed framing with raw status and extra edge-loss hysteresis."""
 
     def __init__(self, tracker_config=None):
         super().__init__(tracker_config)
         self._observed_bird_count = 0
+        self._next_edge_risk = False
+        self._edge_risk = False
+
+    def set_edge_risk(self, edge_risk):
+        with self._lock:
+            self._next_edge_risk = bool(edge_risk)
 
     def publish(self, target, bird_count, observed_at, published_at=None):
+        if not bird_count or target is None:
+            with self._lock:
+                self._observed_bird_count = bird_count
+                self._updated_at = observed_at
+                self._empty_samples += 1
+                self._clear_pending()
+                if not self._confirmation_enabled or self._required_samples <= 1:
+                    required_empty_samples = 1
+                else:
+                    required_empty_samples = self._required_samples
+                    if self._edge_risk:
+                        required_empty_samples *= 2
+                if self._empty_samples >= required_empty_samples:
+                    self._bird_count = 0
+            return
+
         super().publish(target, bird_count, observed_at, published_at=published_at)
         with self._lock:
             self._observed_bird_count = bird_count
+            # Pending suspicious targets have not become the active track yet.
+            if self._pending_samples == 0:
+                self._edge_risk = self._next_edge_risk
 
     def status(self):
         with self._lock:
