@@ -73,6 +73,37 @@ class SmoothedGuidanceState(legacy.GuidanceState):
         self._pending_target = None
         self._pending_bird_count = 0
         self._pending_samples = 0
+        self._empty_samples = 0
+
+    def view_for(
+        self,
+        frame_w,
+        frame_h,
+        now,
+        hold_seconds,
+        idle_enabled=True,
+        idle_after_seconds=3.0,
+    ):
+        """Stop pursuing a stale bird crop once bird loss is confirmed."""
+        with self._lock:
+            bird_count = self._bird_count
+            last_birds_at = self._last_birds_at
+
+        if bird_count == 0 and last_birds_at is not None:
+            return (
+                (legacy.full_frame_crop(frame_w, frame_h), "idle")
+                if idle_enabled
+                else (legacy.overview_crop(frame_w, frame_h), "overview")
+            )
+
+        return super().view_for(
+            frame_w,
+            frame_h,
+            now,
+            hold_seconds,
+            idle_enabled=idle_enabled,
+            idle_after_seconds=idle_after_seconds,
+        )
 
     @staticmethod
     def _center(crop):
@@ -198,15 +229,25 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             self._updated_at = observed_at
 
             if not bird_count or target is None:
-                self._bird_count = bird_count
+                self._empty_samples += 1
                 self._clear_pending()
+                loss_confirmed = (
+                    not self._confirmation_enabled
+                    or self._required_samples <= 1
+                    or self._empty_samples >= self._required_samples
+                )
+                if loss_confirmed:
+                    self._bird_count = 0
                 return
 
+            had_empty_sample = self._empty_samples > 0
+            self._empty_samples = 0
             if not self._confirm_or_hold(target, bird_count):
                 # A pending replacement may extend an actively observed bird's
-                # hold, but it must not resurrect tracking after an empty result.
+                # hold, but never after even one empty detector result.
                 if (
-                    previous_count > 0
+                    not had_empty_sample
+                    and previous_count > 0
                     and last_birds_at is not None
                     and max(0.0, observed_at - last_birds_at) <= self._hold_seconds
                 ):
