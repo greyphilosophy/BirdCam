@@ -74,6 +74,34 @@ class SmoothedGuidanceState(legacy.GuidanceState):
         self._pending_bird_count = 0
         self._pending_samples = 0
 
+    def view_for(
+        self,
+        frame_w,
+        frame_h,
+        now,
+        hold_seconds,
+        idle_enabled=True,
+        idle_after_seconds=3.0,
+    ):
+        """Stop pursuing a stale bird crop as soon as detection goes empty."""
+        with self._lock:
+            bird_count = self._bird_count
+            last_birds_at = self._last_birds_at
+
+        if bird_count == 0 and last_birds_at is not None:
+            if idle_enabled:
+                return legacy.full_frame_crop(frame_w, frame_h), "idle"
+            return legacy.overview_crop(frame_w, frame_h), "overview"
+
+        return super().view_for(
+            frame_w,
+            frame_h,
+            now,
+            hold_seconds,
+            idle_enabled=idle_enabled,
+            idle_after_seconds=idle_after_seconds,
+        )
+
     @staticmethod
     def _center(crop):
         x, y, width, height = crop
