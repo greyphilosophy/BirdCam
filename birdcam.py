@@ -155,12 +155,13 @@ class SmoothedGuidanceState(_SmoothedGuidanceState):
                         required_empty_samples *= 2
                 if self._empty_samples >= required_empty_samples:
                     self._bird_count = 0
+                elif self._edge_risk:
+                    self._last_birds_at = observed_at
             return
 
         super().publish(target, bird_count, observed_at, published_at=published_at)
         with self._lock:
             self._observed_bird_count = bird_count
-            # Pending suspicious targets have not become the active track yet.
             if self._pending_samples == 0:
                 self._edge_risk = self._next_edge_risk
 
