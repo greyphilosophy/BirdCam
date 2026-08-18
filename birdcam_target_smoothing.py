@@ -80,6 +80,7 @@ class SmoothedGuidanceState(legacy.GuidanceState):
         self._empty_samples = 0
         self._single_bird_size_history = []
         self._stable_single_bird_size = None
+        self._stable_single_bird_center = None
 
     def view_for(
         self,
@@ -155,9 +156,10 @@ class SmoothedGuidanceState(legacy.GuidanceState):
     def _reset_single_bird_size_history(self):
         self._single_bird_size_history = []
         self._stable_single_bird_size = None
+        self._stable_single_bird_center = None
 
     def _stabilize_single_bird_target(self, target, bird_count):
-        """Filter single-bird zoom size while leaving its current center responsive."""
+        """Filter single-bird zoom size and reject centers from size outliers."""
         if target is None or bird_count != 1:
             if bird_count and bird_count != 1:
                 self._reset_single_bird_size_history()
@@ -167,8 +169,17 @@ class SmoothedGuidanceState(legacy.GuidanceState):
         if len(self._single_bird_size_history) > 5:
             self._single_bird_size_history.pop(0)
 
+        current_center = self._center(target)
         if self._stable_single_bird_size is None:
             self._stable_single_bird_size = (target[2], target[3])
+            self._stable_single_bird_center = current_center
+
+        stable_w, stable_h = self._stable_single_bird_size
+        size_deadband = 2.0 * self._padding
+        current_size_is_outlier = (
+            abs(target[2] - stable_w) > size_deadband
+            or abs(target[3] - stable_h) > size_deadband
+        )
 
         if len(self._single_bird_size_history) >= 3:
             ordered = sorted(
@@ -177,15 +188,23 @@ class SmoothedGuidanceState(legacy.GuidanceState):
             )
             median_crop = ordered[len(ordered) // 2]
             candidate_size = (median_crop[2], median_crop[3])
-            stable_w, stable_h = self._stable_single_bird_size
-            size_deadband = 2.0 * self._padding
             if (
                 abs(candidate_size[0] - stable_w) > size_deadband
                 or abs(candidate_size[1] - stable_h) > size_deadband
             ):
                 self._stable_single_bird_size = candidate_size
+                stable_w, stable_h = candidate_size
+                current_size_is_outlier = (
+                    abs(target[2] - stable_w) > size_deadband
+                    or abs(target[3] - stable_h) > size_deadband
+                )
 
-        center_x, center_y = self._center(target)
+        if current_size_is_outlier and self._stable_single_bird_center is not None:
+            center_x, center_y = self._stable_single_bird_center
+        else:
+            center_x, center_y = current_center
+            self._stable_single_bird_center = current_center
+
         stable_w, stable_h = self._stable_single_bird_size
         return self._crop_from_center(center_x, center_y, stable_w, stable_h)
 
