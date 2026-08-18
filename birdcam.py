@@ -77,17 +77,76 @@ _OptimizedBirdCam = BirdCam
 
 
 class SmoothedGuidanceState(_SmoothedGuidanceState):
-    """Smoothed framing with raw status and extra edge-loss hysteresis."""
+    """Production framing with edge-loss and single-bird zoom hysteresis."""
 
     def __init__(self, tracker_config=None):
+        tracker_config = tracker_config or {}
         super().__init__(tracker_config)
         self._observed_bird_count = 0
         self._next_edge_risk = False
         self._edge_risk = False
+        self._padding = max(0.0, float(tracker_config.get("padding", 200)))
+        self._single_bird_size_history = []
+        self._stable_single_bird_size = None
+        self._stable_single_bird_center = None
 
     def set_edge_risk(self, edge_risk):
         with self._lock:
             self._next_edge_risk = bool(edge_risk)
+
+    def _reset_zoom_history(self):
+        self._single_bird_size_history = []
+        self._stable_single_bird_size = None
+        self._stable_single_bird_center = None
+
+    def _stabilize_single_bird_target(self, target, bird_count):
+        if not self._smoothing_enabled or target is None or bird_count != 1:
+            if bird_count and bird_count != 1:
+                self._reset_zoom_history()
+            return target
+
+        self._single_bird_size_history.append(target)
+        if len(self._single_bird_size_history) > 5:
+            self._single_bird_size_history.pop(0)
+
+        current_center = self._center(target)
+        if self._stable_single_bird_size is None:
+            self._stable_single_bird_size = (target[2], target[3])
+            self._stable_single_bird_center = current_center
+
+        stable_w, stable_h = self._stable_single_bird_size
+        deadband = 2.0 * self._padding
+        current_size_is_outlier = (
+            abs(target[2] - stable_w) > deadband
+            or abs(target[3] - stable_h) > deadband
+        )
+
+        if len(self._single_bird_size_history) >= 3:
+            ordered = sorted(
+                self._single_bird_size_history,
+                key=lambda crop: crop[2] * crop[3],
+            )
+            median_crop = ordered[len(ordered) // 2]
+            candidate_size = (median_crop[2], median_crop[3])
+            if (
+                abs(candidate_size[0] - stable_w) > deadband
+                or abs(candidate_size[1] - stable_h) > deadband
+            ):
+                self._stable_single_bird_size = candidate_size
+                stable_w, stable_h = candidate_size
+                current_size_is_outlier = (
+                    abs(target[2] - stable_w) > deadband
+                    or abs(target[3] - stable_h) > deadband
+                )
+
+        if current_size_is_outlier and self._stable_single_bird_center is not None:
+            center_x, center_y = self._stable_single_bird_center
+        else:
+            center_x, center_y = current_center
+            self._stable_single_bird_center = current_center
+
+        stable_w, stable_h = self._stable_single_bird_size
+        return self._crop_from_center(center_x, center_y, stable_w, stable_h)
 
     def publish(self, target, bird_count, observed_at, published_at=None):
         if not bird_count or target is None:
@@ -104,10 +163,12 @@ class SmoothedGuidanceState(_SmoothedGuidanceState):
                         required_empty_samples *= 2
                 if self._empty_samples >= required_empty_samples:
                     self._bird_count = 0
+                    self._reset_zoom_history()
                 elif self._edge_risk:
                     self._last_birds_at = observed_at
             return
 
+        target = self._stabilize_single_bird_target(target, bird_count)
         super().publish(target, bird_count, observed_at, published_at=published_at)
         with self._lock:
             self._observed_bird_count = bird_count
