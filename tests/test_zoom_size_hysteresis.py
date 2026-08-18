@@ -6,7 +6,13 @@ def make_state():
         {
             "padding": 200,
             "target_confirmation": {"enabled": False},
-            "target_smoothing": {"enabled": True},
+            "target_smoothing": {
+                "enabled": True,
+                "center_alpha": 1.0,
+                "size_alpha": 1.0,
+                "pan_dead_zone_pixels": 0,
+                "zoom_dead_zone_fraction": 0,
+            },
         }
     )
 
