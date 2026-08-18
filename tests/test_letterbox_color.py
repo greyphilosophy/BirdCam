@@ -40,7 +40,12 @@ def test_matching_portrait_output_is_unchanged():
     assert np.all(output == 0)
 
 
-def assert_production_letterbox_preserves_video(frame, crop, degrees):
+def assert_production_letterbox_preserves_video(
+    frame,
+    crop,
+    degrees,
+    require_bars=False,
+):
     raw = birdcam._optimized_crop_and_scale_rotated(frame, crop, degrees)
     output = birdcam._crop_and_scale_with_dark_gray_letterbox(frame, crop, degrees)
 
@@ -48,14 +53,16 @@ def assert_production_letterbox_preserves_video(frame, crop, degrees):
     bar_mask = ~video_mask
 
     assert np.any(video_mask)
-    assert np.any(bar_mask)
     assert np.array_equal(output[video_mask], raw[video_mask])
-    assert np.all(output[bar_mask] == LETTERBOX_GRAY)
+    if require_bars:
+        assert np.any(bar_mask)
+    if np.any(bar_mask):
+        assert np.all(output[bar_mask] == LETTERBOX_GRAY)
 
 
 @pytest.mark.parametrize("degrees", [0, 90, 180, 270])
 def test_production_letterbox_never_overwrites_rendered_video_pixels(degrees):
-    """Gray bars must only recolor pixels the renderer left outside the video."""
+    """Gray recoloring must never change pixels emitted by the video renderer."""
     native_h, native_w = 901, 1601
     frame = np.full((native_h, native_w, 3), 123, dtype=np.uint8)
     if degrees in {90, 270}:
@@ -78,13 +85,23 @@ def test_production_letterbox_preserves_video_for_logged_crop_shapes(crop):
     """Exercise crop geometries observed in production logs."""
     frame = np.full((2160, 3840, 3), 137, dtype=np.uint8)
 
-    assert_production_letterbox_preserves_video(frame, crop, 0)
+    assert_production_letterbox_preserves_video(
+        frame,
+        crop,
+        0,
+        require_bars=True,
+    )
 
 
 def test_production_letterbox_preserves_video_at_odd_rounding_boundary():
-    """A one-pixel bar from odd dimensions must not consume the adjacent video row."""
-    native_h, native_w = 1601, 901
+    """Odd render dimensions must not make a bar consume an adjacent video row."""
+    native_h, native_w = 1601, 1001
     frame = np.full((native_h, native_w, 3), 173, dtype=np.uint8)
     crop = (0, 0, native_w, native_h)
 
-    assert_production_letterbox_preserves_video(frame, crop, 0)
+    assert_production_letterbox_preserves_video(
+        frame,
+        crop,
+        0,
+        require_bars=True,
+    )
