@@ -40,16 +40,7 @@ def test_matching_portrait_output_is_unchanged():
     assert np.all(output == 0)
 
 
-@pytest.mark.parametrize("degrees", [0, 90, 270])
-def test_production_letterbox_never_overwrites_rendered_video_pixels(degrees):
-    """Gray bars must only recolor pixels the renderer left outside the video."""
-    native_h, native_w = 901, 1601
-    frame = np.full((native_h, native_w, 3), 123, dtype=np.uint8)
-    if degrees in {90, 270}:
-        crop = (0, 0, native_h, native_w)
-    else:
-        crop = (0, 0, native_w, native_h)
-
+def assert_production_letterbox_preserves_video(frame, crop, degrees):
     raw = birdcam._optimized_crop_and_scale_rotated(frame, crop, degrees)
     output = birdcam._crop_and_scale_with_dark_gray_letterbox(frame, crop, degrees)
 
@@ -62,15 +53,38 @@ def test_production_letterbox_never_overwrites_rendered_video_pixels(degrees):
     assert np.all(output[bar_mask] == LETTERBOX_GRAY)
 
 
+@pytest.mark.parametrize("degrees", [0, 90, 180, 270])
+def test_production_letterbox_never_overwrites_rendered_video_pixels(degrees):
+    """Gray bars must only recolor pixels the renderer left outside the video."""
+    native_h, native_w = 901, 1601
+    frame = np.full((native_h, native_w, 3), 123, dtype=np.uint8)
+    if degrees in {90, 270}:
+        crop = (0, 0, native_h, native_w)
+    else:
+        crop = (0, 0, native_w, native_h)
+
+    assert_production_letterbox_preserves_video(frame, crop, degrees)
+
+
+@pytest.mark.parametrize(
+    "crop",
+    [
+        (385, 216, 3455, 1944),
+        (1519, 195, 1520, 1941),
+        (1169, 0, 1502, 2160),
+    ],
+)
+def test_production_letterbox_preserves_video_for_logged_crop_shapes(crop):
+    """Exercise crop geometries observed in production logs."""
+    frame = np.full((2160, 3840, 3), 137, dtype=np.uint8)
+
+    assert_production_letterbox_preserves_video(frame, crop, 0)
+
+
 def test_production_letterbox_preserves_video_at_odd_rounding_boundary():
     """A one-pixel bar from odd dimensions must not consume the adjacent video row."""
     native_h, native_w = 1601, 901
     frame = np.full((native_h, native_w, 3), 173, dtype=np.uint8)
     crop = (0, 0, native_w, native_h)
 
-    raw = birdcam._optimized_crop_and_scale_rotated(frame, crop, 0)
-    output = birdcam._crop_and_scale_with_dark_gray_letterbox(frame, crop, 0)
-    video_mask = np.any(raw != 0, axis=2)
-
-    assert np.array_equal(output[video_mask], raw[video_mask])
-    assert np.count_nonzero(~video_mask) > 0
+    assert_production_letterbox_preserves_video(frame, crop, 0)
