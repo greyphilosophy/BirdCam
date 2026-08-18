@@ -32,6 +32,25 @@ def test_single_large_size_outlier_does_not_change_zoom():
     assert mode == "tracking"
 
 
+def test_size_outlier_does_not_recenter_to_full_frame():
+    state = make_state()
+    stable = (0, 120, 1080, 1920)
+    for index in range(3):
+        state.publish(stable, bird_count=1, observed_at=index * 0.1)
+
+    state.publish((0, 0, 3840, 2160), bird_count=1, observed_at=0.3)
+
+    target, _ = state.view_for(
+        3840,
+        2160,
+        now=0.3,
+        hold_seconds=1.0,
+        idle_enabled=True,
+        idle_after_seconds=3.0,
+    )
+    assert target == stable
+
+
 def test_two_large_size_outliers_still_do_not_change_zoom():
     state = make_state()
     stable = (1200, 120, 1080, 1920)
