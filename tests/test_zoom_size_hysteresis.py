@@ -150,8 +150,19 @@ def test_zoom_hysteresis_is_disabled_when_target_smoothing_is_disabled():
         }
     )
     first = (1200, 120, 1080, 1920)
-    second = (500, 600, 1480, 2320)
+    second = (500, 0, 1480, 2160)
     state.publish(first, bird_count=1, observed_at=0.0)
     state.publish(second, bird_count=1, observed_at=0.1)
     target, _ = state.view_for(3840, 2160, 0.1, 1.0)
     assert target == second
+
+
+def test_invalid_padding_falls_back_to_default():
+    state = SmoothedGuidanceState(
+        {
+            "padding": None,
+            "target_confirmation": {"enabled": False},
+            "target_smoothing": {"enabled": True},
+        }
+    )
+    assert state._padding == 200.0
