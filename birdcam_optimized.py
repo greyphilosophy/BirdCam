@@ -157,6 +157,9 @@ class GuidanceWorker(legacy.GuidanceWorker):
         super().__init__(config, latest_frame, guidance, stop_event)
         self.rotation_degrees = rotation_degrees
 
+    def _on_detection(self, birds, frame_w, frame_h, tracker):
+        """Allow specialized guidance workers to observe each detector result."""
+
     def run(self):
         detector = self.config["detector"]
         tracker = self.config["tracker"]
@@ -192,6 +195,7 @@ class GuidanceWorker(legacy.GuidanceWorker):
                     detector.get("device", 0),
                 )
                 frame_h, frame_w = guidance_frame.shape[:2]
+                self._on_detection(birds, frame_w, frame_h, tracker)
                 self.guidance.publish(
                     legacy.compute_bird_crop(
                         birds,

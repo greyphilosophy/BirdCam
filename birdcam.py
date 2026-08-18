@@ -1,7 +1,6 @@
 """Compatibility entry point for the optimized BirdCam pipeline."""
 
 import sys
-import time
 
 import yaml
 
@@ -59,66 +58,16 @@ def _bird_near_frame_edge(birds, frame_w, frame_h, padding):
 class EdgeAwareGuidanceWorker(_optimized.GuidanceWorker):
     """Publish whether the current bird observation is vulnerable to edge flicker."""
 
-    def run(self):
-        detector = self.config["detector"]
-        tracker = self.config["tracker"]
-        try:
-            _legacy.logger.info("Loading YOLO guidance model: %s", detector["model_path"])
-            model = _legacy.YOLO(detector["model_path"])
-            sample_period = 1.0 / max(
-                0.1,
-                float(detector.get("max_fps", 5.0)),
+    def _on_detection(self, birds, frame_w, frame_h, tracker):
+        if birds and hasattr(self.guidance, "set_edge_risk"):
+            self.guidance.set_edge_risk(
+                _bird_near_frame_edge(
+                    birds,
+                    frame_w,
+                    frame_h,
+                    tracker.get("padding", 0),
+                )
             )
-            sequence = 0
-            next_sample = 0.0
-            while not self.stop_event.is_set():
-                snapshot = self.latest_frame.wait_for_newer(
-                    sequence,
-                    timeout=0.25,
-                )
-                if snapshot is None:
-                    continue
-                sequence = snapshot.sequence
-                if time.monotonic() < next_sample:
-                    continue
-
-                guidance_frame = _legacy.rotate_frame(
-                    snapshot.frame,
-                    self.rotation_degrees,
-                )
-                birds = _legacy.detect_birds(
-                    model,
-                    guidance_frame,
-                    detector["conf_thresh"],
-                    detector.get("imgsz", 1280),
-                    detector.get("device", 0),
-                )
-                frame_h, frame_w = guidance_frame.shape[:2]
-                if birds and hasattr(self.guidance, "set_edge_risk"):
-                    self.guidance.set_edge_risk(
-                        _bird_near_frame_edge(
-                            birds,
-                            frame_w,
-                            frame_h,
-                            tracker.get("padding", 0),
-                        )
-                    )
-                self.guidance.publish(
-                    _legacy.compute_bird_crop(
-                        birds,
-                        frame_w,
-                        frame_h,
-                        tracker["padding"],
-                    ),
-                    len(birds),
-                    snapshot.captured_at,
-                    published_at=time.monotonic(),
-                )
-                next_sample = time.monotonic() + sample_period
-        except Exception as exc:
-            self.error = exc
-            _legacy.logger.exception("Guidance worker stopped")
-            self.stop_event.set()
 
 
 # BirdCam's optimized run loop resolves GuidanceWorker from its module globals at
