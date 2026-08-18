@@ -85,7 +85,10 @@ class SmoothedGuidanceState(_SmoothedGuidanceState):
         self._observed_bird_count = 0
         self._next_edge_risk = False
         self._edge_risk = False
-        self._padding = max(0.0, float(tracker_config.get("padding", 200)))
+        try:
+            self._padding = max(0.0, float(tracker_config.get("padding", 200)))
+        except (TypeError, ValueError):
+            self._padding = 200.0
         self._single_bird_size_history = []
         self._stable_single_bird_size = None
         self._stable_single_bird_center = None
