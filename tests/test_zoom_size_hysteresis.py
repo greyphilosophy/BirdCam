@@ -1,4 +1,4 @@
-from birdcam_target_smoothing import SmoothedGuidanceState
+from birdcam import SmoothedGuidanceState
 
 
 def make_state():
@@ -6,7 +6,7 @@ def make_state():
         {
             "padding": 200,
             "target_confirmation": {"enabled": False},
-            "target_smoothing": {"enabled": False},
+            "target_smoothing": {"enabled": True},
         }
     )
 
@@ -100,7 +100,6 @@ def test_padding_is_zoom_size_deadband():
     for index in range(3):
         state.publish(stable, bird_count=1, observed_at=index * 0.1)
 
-    # Full crop dimensions can move by twice padding before zoom is reframed.
     nearby_size = (1080, 30, 1380, 2100)
     for index in range(3, 8):
         state.publish(nearby_size, bird_count=1, observed_at=index * 0.1)
@@ -134,3 +133,19 @@ def test_multiple_birds_do_not_reuse_single_bird_zoom_history():
         idle_after_seconds=3.0,
     )
     assert target == group
+
+
+def test_zoom_hysteresis_is_disabled_when_target_smoothing_is_disabled():
+    state = SmoothedGuidanceState(
+        {
+            "padding": 200,
+            "target_confirmation": {"enabled": False},
+            "target_smoothing": {"enabled": False},
+        }
+    )
+    first = (1200, 120, 1080, 1920)
+    second = (500, 600, 1480, 2320)
+    state.publish(first, bird_count=1, observed_at=0.0)
+    state.publish(second, bird_count=1, observed_at=0.1)
+    target, _ = state.view_for(3840, 2160, 0.1, 1.0)
+    assert target == second
